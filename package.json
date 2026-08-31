@@ -1,0 +1,25 @@
+{
+  "name": "sleeper-draft-night",
+  "private": true,
+  "version": "3.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.57.4",
+    "@zoom/videosdk": "2.5.0",
+    "jose": "5.9.6",
+    "lucide-react": "0.468.0",
+    "react": "18.2.0",
+    "react-dom": "18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.3.4",
+    "vite": "5.4.14",
+    "vitest": "2.1.8"
+  }
+}
