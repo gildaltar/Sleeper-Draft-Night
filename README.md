@@ -38,6 +38,6 @@ npm audit --omit=dev
 
 ## Security model
 
-Public clients can read only the visual fields from `team_profiles`; `password_hash` has no anonymous or authenticated column grant. Team passwords are bcrypt-hashed and verified by the rate-limited `team-access` Edge Function. Commissioner actions require Supabase Auth plus membership in `commissioners`. Zoom SDK secrets remain server-side in Vercel environment variables.
+Public clients can read only the visual fields from `team_profiles`; `password_hash` has no anonymous or authenticated column grant. Team passwords are bcrypt-hashed and verified by the rate-limited `team-access` Edge Function, including a second server-side check before an owner camera token is minted. Commissioner actions require Supabase Auth plus membership in `commissioners`. Zoom SDK secrets remain server-side in Vercel environment variables.
 
 Database changes are tracked in `supabase/migrations`.

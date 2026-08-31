@@ -16,11 +16,11 @@ export function memberForParticipant(participant, members) {
   );
 }
 
-async function getVideoToken(participantType, rosterId) {
+async function getVideoToken(participantType, rosterId, password) {
   const response = await fetch("/api/zoom/video-token", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ participantType, rosterId, instanceId: instanceId() }),
+    body: JSON.stringify({ participantType, rosterId, password, instanceId: instanceId() }),
   });
   const data = await response.json();
   if (!response.ok || !data.token) throw new Error(data.error || "Could not authorize team cameras");
@@ -116,9 +116,9 @@ export function useZoomDisplay({ members, spectator = false, enabled = true }) {
   return { status, message, participantByRoster, attach, reconnect: connect };
 }
 
-export async function startOwnerCamera({ member, mount, onStatus }) {
+export async function startOwnerCamera({ member, mount, password, onStatus }) {
   onStatus?.("connecting", "Requesting camera and microphone…");
-  const token = await getVideoToken("owner", member.rosterId);
+  const token = await getVideoToken("owner", member.rosterId, password);
   const { default: ZoomVideo } = await import("@zoom/videosdk");
   const requirements = ZoomVideo.checkSystemRequirements();
   if (!requirements.video || !requirements.audio) throw new Error("This browser does not support the camera and microphone features Zoom requires");

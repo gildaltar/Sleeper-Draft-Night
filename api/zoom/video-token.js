@@ -15,6 +15,17 @@ export default async function handler(req, res) {
   const participantType = ["display", "owner", "spectator"].includes(body.participantType) ? body.participantType : "spectator";
   const rosterId = Number(body.rosterId);
   if (participantType === "owner" && (!Number.isInteger(rosterId) || rosterId < 1 || rosterId > 32)) return json(res, 400, { error: "Valid roster ID required" });
+  if (participantType === "owner") {
+    const supabaseUrl = process.env.SUPABASE_URL || "https://iimmjxnjkkzejwgxofsk.supabase.co";
+    const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_UPTYCbZFE3ZN5P6GdS0ZcQ_LCntNs7k";
+    const access = await fetch(`${supabaseUrl}/functions/v1/team-access`, {
+      method: "POST",
+      headers: { "content-type": "application/json", apikey: publishableKey, authorization: `Bearer ${publishableKey}` },
+      body: JSON.stringify({ action: "verify", leagueId: process.env.SLEEPER_LEAGUE_ID || "1398145266615345152", rosterId, password: body.password }),
+    });
+    const result = await access.json().catch(() => ({}));
+    if (!access.ok || !result.ok) return json(res, 401, { error: "Team password verification required" });
+  }
   const now = Math.floor(Date.now() / 1000) - 30;
   const userKey = participantType === "owner" ? `team-owner-${rosterId}` : `${participantType}-${String(body.instanceId || crypto.randomUUID()).slice(0, 64)}`;
   const token = await new SignJWT({

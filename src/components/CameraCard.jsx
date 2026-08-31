@@ -21,7 +21,7 @@ export default function CameraCard({ member, profile, participant, attach, activ
       <div className="camera-frame" ref={mount}>
         {!participant?.bVideoOn && (
           <div className="camera-idle">
-            {avatar ? <img src={avatar} alt="" /> : <span>{member.displayName.slice(0, 1)}</span>}
+            <div className="camera-avatar"><span>{member.displayName.slice(0, 1).toUpperCase()}</span>{avatar && <img src={avatar} alt="" onError={(event) => event.currentTarget.remove()} />}</div>
             <b>{participant ? "Camera off" : "Waiting for owner"}</b>
           </div>
         )}

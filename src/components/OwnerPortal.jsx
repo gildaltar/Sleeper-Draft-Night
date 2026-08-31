@@ -51,7 +51,7 @@ export default function OwnerPortal({ data, control, rosterId }) {
   };
   const startCamera = async () => {
     try {
-      cameraSession.current = await startOwnerCamera({ member, mount: cameraMount.current, onStatus: (state, detail) => { setCameraState(state); setMessage(detail); } });
+      cameraSession.current = await startOwnerCamera({ member, mount: cameraMount.current, password, onStatus: (state, detail) => { setCameraState(state); setMessage(detail); } });
     } catch (error) { setCameraState("error"); setMessage(error.message || "Could not start camera"); }
   };
   const stopCamera = async () => {
