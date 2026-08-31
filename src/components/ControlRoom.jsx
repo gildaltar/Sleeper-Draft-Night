@@ -1,7 +1,8 @@
 import { AlertOctagon, FastForward, LogOut, Pause, Play, Save, Shield, Volume2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { nextMockPick } from "../lib/draft";
 import { LEAGUE_ID } from "../lib/config";
+import { afterAuthLock, checkCommissioner } from "../lib/controlAuth";
 import { supabase } from "../lib/supabase";
 
 function Login({ onReady }) {
@@ -12,10 +13,15 @@ function Login({ onReady }) {
   const submit = async () => {
     setBusy(true);
     setMessage("");
-    const result = await supabase.auth.signInWithPassword({ email, password });
-    setBusy(false);
-    if (result.error) setMessage(result.error.message);
-    else onReady(result.data.session);
+    try {
+      const result = await supabase.auth.signInWithPassword({ email, password });
+      if (result.error) throw result.error;
+      await onReady(result.data.session);
+    } catch (requestError) {
+      setMessage(requestError.message || "Could not open the control room");
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <main className="commissioner-login">
@@ -38,24 +44,69 @@ export default function ControlRoom({ control, bootstrap, live }) {
   const [autoRun, setAutoRun] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [authIssue, setAuthIssue] = useState("");
   const [teamId, setTeamId] = useState("1");
   const [teamPassword, setTeamPassword] = useState("");
   const stateRef = useRef(control.state);
   stateRef.current = control.state;
 
-  const check = async (candidate) => {
-    const active = candidate || (await supabase.auth.getSession()).data.session;
+  const verifyCommissioner = useCallback(async (active) => {
+    if (!active) { setSession(null); setAuthorized(false); setReady(true); return; }
+    const isAuthorized = await checkCommissioner(supabase, active);
     setSession(active);
-    if (!active) { setAuthorized(false); setReady(true); return; }
-    const result = await supabase.from("commissioners").select("user_id").eq("user_id", active.user.id).maybeSingle();
-    setAuthorized(Boolean(result.data));
+    setAuthorized(isAuthorized);
     setReady(true);
-  };
-  useEffect(() => {
-    check();
-    const { data } = supabase.auth.onAuthStateChange((_event, next) => check(next));
-    return () => data.subscription.unsubscribe();
+    setAuthIssue("");
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    let recoveryTimer = window.setTimeout(() => {
+      if (!mounted) return;
+      setReady(true);
+      setAuthIssue("The saved sign-in session took too long to open. You can retry it without clearing site data.");
+    }, 7000);
+
+    const applySession = async (next) => {
+      try {
+        await verifyCommissioner(next);
+      } catch (requestError) {
+        if (!mounted) return;
+        setAuthorized(false);
+        setReady(true);
+        setAuthIssue(requestError.message || "Could not verify commissioner access");
+      } finally {
+        window.clearTimeout(recoveryTimer);
+      }
+    };
+
+    // This call is intentionally outside onAuthStateChange. Supabase can deadlock
+    // when another async client call is made while the auth callback holds its lock.
+    supabase.auth.getSession()
+      .then(({ data, error: sessionError }) => {
+        if (sessionError) throw sessionError;
+        if (mounted) return applySession(data.session);
+        return undefined;
+      })
+      .catch((sessionError) => {
+        if (!mounted) return;
+        window.clearTimeout(recoveryTimer);
+        setReady(true);
+        setAuthIssue(sessionError.message || "Could not restore the saved sign-in session");
+      });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => {
+      // Keep the callback synchronous and defer database work until the auth lock is released.
+      afterAuthLock(() => {
+        if (mounted) void applySession(next);
+      });
+    });
+    return () => {
+      mounted = false;
+      window.clearTimeout(recoveryTimer);
+      data.subscription.unsubscribe();
+    };
+  }, [verifyCommissioner]);
 
   const run = async (action, success) => {
     setError(""); setMessage("");
@@ -77,7 +128,7 @@ export default function ControlRoom({ control, bootstrap, live }) {
   }, [autoRun, control.state.mock_mode, control.state.mock_picks?.length]);
 
   if (!ready) return <main className="loading-screen"><span>Opening secure controls…</span></main>;
-  if (!session) return <Login onReady={check} />;
+  if (!session) return <><Login onReady={verifyCommissioner} />{authIssue && <div className="auth-recovery"><span>{authIssue}</span><button onClick={() => window.location.reload()}>Retry saved session</button></div>}</>;
   if (!authorized) return <main className="commissioner-login"><Shield /><h1>Commissioner access required</h1><p>This signed-in account is not registered as a commissioner.</p><button onClick={() => supabase.auth.signOut()}>Sign out</button></main>;
 
   return (

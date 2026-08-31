@@ -83,14 +83,15 @@ function CenterStage({ league, draft, members, players, picks, currentMember, pr
   );
 }
 
-export default function Broadcast({ data, control, spectator = false }) {
+export default function Broadcast({ data, control, spectator = false, testMode = false }) {
   const { league, members, players } = data.bootstrap;
   const draft = data.live?.draft || data.bootstrap.draft;
   const officialPicks = data.live?.picks || [];
   const picks = control.state.mock_mode ? control.state.mock_picks || [] : officialPicks;
   const pickNo = picks.length + 1;
   const currentMember = memberForPick(pickNo, draft, members) || members[0];
-  const zoom = useZoomDisplay({ members, spectator, enabled: control.state.camera_enabled !== false });
+  const layout = control.state.camera_layout || "rails";
+  const zoom = useZoomDisplay({ members, spectator, enabled: !testMode && control.state.camera_enabled !== false && layout !== "hidden" });
   const profileByRoster = new Map(control.profiles.map((profile) => [Number(profile.roster_id), profile]));
   const camera = (member) => (
     <CameraCard
@@ -100,6 +101,7 @@ export default function Broadcast({ data, control, spectator = false }) {
       participant={zoom.participantByRoster.get(member.rosterId)}
       attach={zoom.attach}
       active={member.rosterId === currentMember.rosterId}
+      simulated={testMode}
     />
   );
 
@@ -107,10 +109,19 @@ export default function Broadcast({ data, control, spectator = false }) {
     return <main className="holding-screen"><Trophy /><span>DRAFT ROOM STANDBY</span><h1>THE WAR ROOMS ARE GETTING READY</h1><p>Live Sleeper state is preserved. The broadcast will return shortly.</p></main>;
   }
   if (control.state.scene === "board") return null;
-  if (control.state.scene === "cameras") {
+  if (control.state.scene === "cameras" || (control.state.scene === "split" && layout === "wall")) {
     return <main className="camera-wall">{members.map(camera)}</main>;
   }
-  const camerasVisible = control.state.scene !== "draft" && control.state.camera_enabled !== false;
+  const camerasVisible = control.state.scene !== "draft" && control.state.camera_enabled !== false && layout !== "hidden";
+  if (camerasVisible && layout === "filmstrip") {
+    return (
+      <main className="broadcast-filmstrip">
+        <CenterStage league={league} draft={draft} members={members} players={players} picks={picks} currentMember={currentMember} profiles={control.profiles} />
+        <aside className="camera-filmstrip">{members.map(camera)}</aside>
+        {!testMode && zoom.message && <div className="camera-notice"><AlertTriangle size={15} />{zoom.message}</div>}
+      </main>
+    );
+  }
   return (
     <main className={`broadcast-grid ${camerasVisible ? "with-cameras" : "draft-only"}`}>
       {camerasVisible && <aside className="camera-rail left">{members.slice(0, 3).map(camera)}</aside>}
@@ -124,7 +135,7 @@ export default function Broadcast({ data, control, spectator = false }) {
         profiles={control.profiles}
       />
       {camerasVisible && <aside className="camera-rail right">{members.slice(3, 6).map(camera)}</aside>}
-      {zoom.message && <div className="camera-notice"><AlertTriangle size={15} />{zoom.message}</div>}
+      {!testMode && zoom.message && <div className="camera-notice"><AlertTriangle size={15} />{zoom.message}</div>}
     </main>
   );
 }
