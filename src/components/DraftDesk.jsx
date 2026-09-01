@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, CheckCircle2, ExternalLink, ListPlus, Search, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { memberForPick, playerImage, roundAndPick } from "../lib/draft";
+import { reconcilePickRequest } from "../lib/pickWorkflow";
 import { teamAccess } from "../lib/teamAccess";
 
 const queueKey = (draftId, rosterId) => `sdn-draft-plan-${draftId}-${rosterId}`;
@@ -49,9 +50,8 @@ export default function DraftDesk({ data, control, rosterId, modal = false, onCl
   }, [request?.id,request?.status]);
   useEffect(() => {
     if (!request) return;
-    const official = picks.find((pick) => Number(pick.pickNo) === Number(request.pick_no));
-    if (!official) return;
-    setRequest((currentRequest) => ({ ...currentRequest, status:String(official.player?.playerId) === String(request.player_id) ? "confirmed" : "rejected", operator_note:String(official.player?.playerId) === String(request.player_id) ? "Confirmed on Sleeper." : `Sleeper recorded ${official.player?.name || "a different player"}.` }));
+    const resolution = reconcilePickRequest(request,picks);
+    if (resolution) setRequest((currentRequest) => ({...currentRequest,...resolution}));
   }, [picks, request?.id, request?.pick_no, request?.player_id]);
   const submitRequest = async () => {
     if (!candidate || !onClock) return;

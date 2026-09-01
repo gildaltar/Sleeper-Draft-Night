@@ -1,6 +1,7 @@
 import { Check, Clipboard, ExternalLink, LoaderCircle, Radio, RotateCcw, ShieldAlert, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { memberForPick, playerImage } from "../lib/draft";
+import { reconcilePickRequest } from "../lib/pickWorkflow";
 import { usePickRequests } from "../hooks/usePickRequests";
 
 const ACTIVE_STATUSES = new Set(["pending", "processing", "submitted"]);
@@ -19,14 +20,8 @@ export default function PickOperator({ bootstrap, live, enabled }) {
   useEffect(() => {
     if (!enabled || !picks.length || !active.length) return;
     for (const request of active) {
-      const official = picks.find((pick) => Number(pick.pickNo) === Number(request.pick_no));
-      if (!official) continue;
-      const matches = String(official.player?.playerId) === String(request.player_id);
-      void update(request.id, {
-        status: matches ? "confirmed" : "rejected",
-        official_pick_no: official.pickNo,
-        operator_note: matches ? "Verified against the official Sleeper feed." : `Sleeper recorded ${official.player?.name || "a different player"} at this pick.`,
-      });
+      const resolution = reconcilePickRequest(request,picks);
+      if (resolution) void update(request.id,resolution);
     }
   }, [active, enabled, picks, update]);
 
@@ -45,10 +40,16 @@ export default function PickOperator({ bootstrap, live, enabled }) {
     setMessage(`${request.player_name} copied`);
     window.setTimeout(() => setMessage(""), 1800);
   };
+  const openForEntry = async (request) => {
+    window.open(sleeperUrl,"sleeper-draft-room");
+    try {await navigator.clipboard.writeText(request.player_name);} catch { /* The player remains visible for manual entry. */ }
+    if (request.status === "pending") await act(request,"processing","Sleeper opened and player copied; ready for automated or manual entry.");
+    else {setMessage(`${request.player_name}: Sleeper opened and player copied`);window.setTimeout(() => setMessage(""),2200);}
+  };
 
   return (
     <article className="control-card pick-operator-card" data-testid="pick-operator">
-      <header className="pick-operator-head"><div><h2><Radio /> Official Pick Operator</h2><p>Team requests land here. Enter the player in Sleeper, then the official feed confirms the result automatically.</p></div><div className={`operator-connection ${connected ? "connected" : ""}`}><i />{connected ? "QUEUE LIVE" : "RECONNECTING"}</div></header>
+      <header className="pick-operator-head"><div><h2><Radio /> Official Pick Operator</h2><p>Team requests land here. “Open + copy” supports ChatGPT browser automation and the same screen is the commissioner’s immediate manual fallback. Sleeper’s official feed confirms the result.</p></div><div className={`operator-connection ${connected ? "connected" : ""}`}><i />{connected ? "QUEUE LIVE" : "RECONNECTING"}</div></header>
       <div className="operator-truth-strip"><span>SLEEPER STATUS <b>{String(draft.status).replace("_", " ")}</b></span><span>CURRENT PICK <b>{pickNo}</b></span><span>ON CLOCK <b>{onClock?.teamName || "Complete"}</b></span><span>PENDING <b>{active.length}</b></span><a href={sleeperUrl} target="sleeper-draft-room" rel="noreferrer"><ExternalLink />Open Sleeper draft room</a></div>
       {(error || message) && <div className={error ? "form-error" : "form-success"}>{error || message}</div>}
       <div className="operator-queue">
@@ -60,9 +61,10 @@ export default function PickOperator({ bootstrap, live, enabled }) {
             <div className="operator-player"><span>PICK {request.pick_no} · {owner?.teamName || `Team ${request.roster_id}`}</span><h3>{request.player_name}</h3><p>{request.position} · {request.nfl_team} · Request #{request.id}</p>{wrongTurn && <em><ShieldAlert />Does not match the current Sleeper turn—verify before acting.</em>}</div>
             <div className="operator-status"><small>STATUS</small><b>{request.status}</b><span>{new Date(request.requested_at).toLocaleTimeString([], { hour:"numeric", minute:"2-digit", second:"2-digit" })}</span></div>
             <div className="operator-actions">
-              <button onClick={() => copy(request)}><Clipboard />Copy player</button>
+              <button className="active" onClick={() => openForEntry(request)}><ExternalLink />Open + copy</button>
+              <button onClick={() => copy(request)}><Clipboard />Copy only</button>
               {request.status === "pending" && <button className="active" onClick={() => act(request,"processing","Commissioner operator opened the request.")}><LoaderCircle />Start</button>}
-              {request.status !== "submitted" && <button onClick={() => act(request,"submitted","Entered in Sleeper; awaiting official-feed verification.")}><Check />Entered</button>}
+              {request.status !== "submitted" && <button onClick={() => act(request,"submitted","Entered in Sleeper; awaiting official-feed verification.")}><Check />I entered it</button>}
               <button className="danger-lite" onClick={() => act(request,"rejected","Commissioner rejected or replaced this request.")}><X />Reject</button>
             </div>
           </section>;

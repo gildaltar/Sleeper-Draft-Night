@@ -1,6 +1,7 @@
 import { Camera, Check, Eye, EyeOff, ImagePlus, ListPlus, Lock, LogOut, Mic, MicOff, Palette, Save, Send, Signal, Sparkles, StopCircle, VideoOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { startOwnerCamera } from "../hooks/useLiveKit";
+import { OWNER_AUTH_RETURN_KEY, ownerMagicLinkRedirect, ownerTeamPath } from "../lib/authRedirect";
 import { TEAM_ACCENTS } from "../lib/config";
 import { memberForPick, parsePanelProfile, rosterNeeds } from "../lib/draft";
 import { stadium } from "../lib/showAssets";
@@ -108,9 +109,8 @@ export default function OwnerPortal({data,control,rosterId,testMode = false}) {
   const sendMagicLink = async () => {
     setBusy(true);setMessage("");
     try {
-      const redirect = new URL("/team",window.location.origin);
-      redirect.searchParams.set("team",String(rosterId));
-      const {error} = await supabase.auth.signInWithOtp({email:email.trim(),options:{emailRedirectTo:redirect.toString(),shouldCreateUser:true}});
+      try { window.sessionStorage.setItem(OWNER_AUTH_RETURN_KEY,ownerTeamPath(rosterId)); } catch { /* Storage can be unavailable. */ }
+      const {error} = await supabase.auth.signInWithOtp({email:email.trim(),options:{emailRedirectTo:ownerMagicLinkRedirect(rosterId),shouldCreateUser:true}});
       if (error) throw error;
       setMessage("Check your email and open the secure sign-in link on this device.");
     } catch (error) { setMessage(error.message || "Could not send the sign-in link"); }
@@ -237,7 +237,7 @@ export default function OwnerPortal({data,control,rosterId,testMode = false}) {
           <section className="camera-workspace studio-preview-column">
             <div className="studio-preview-head"><div><span>LIVE PREVIEW</span><b>{previewState.replace("-"," ")}</b></div><div>{[["normal","Normal"],["on-clock","On clock"],["celebration","Celebration"]].map(([value,label]) => <button className={previewState === value ? "active" : ""} key={value} onClick={() => setPreviewState(value)}>{label}</button>)}</div></div>
             <div className={`owner-camera studio-frame style-${form.panelStyle} preview-${previewState}`} style={{backgroundImage}}>
-              <div className="owner-camera-video" ref={cameraMount}>{!cameraReady && <div className="camera-placeholder"><Camera /><b>Camera not started</b><small>Native browser camera · 16:9</small></div>}</div>
+              <div className="owner-camera-video"><div className="camera-stream-mount" ref={cameraMount}/>{!cameraReady && <div className="camera-placeholder"><Camera /><b>Camera not started</b><small>Native browser camera · 16:9</small></div>}</div>
               <div className={`studio-nameplate nameplate-${form.nameplate}`}><HelmetIdentity profile={{...profile,team_name:form.teamName,panel_style:[form.panelStyle,form.intensity,form.favorite,form.nameplate,encodeURIComponent(form.logo || "")].join("|")}} member={member} compact /><div><strong>{form.teamName}</strong><small>{form.motto || "Make draft night yours"}</small></div><b>{form.badge || "LIVE"}</b></div>
               {previewState === "on-clock" && <em className="studio-state">ON THE CLOCK · 0:45</em>}
               {previewState === "celebration" && <div className="celebration-burst"><Sparkles />PICK CELEBRATION</div>}
