@@ -35,6 +35,7 @@ const titleFromUrl = (value) => {
 const AppleMusicQueuePlayer = forwardRef(function AppleMusicQueuePlayer({items,enabled,volume = 60,developerToken,onState},ref) {
   const musicRef = useRef(null);
   const authorizedRef = useRef(false);
+  const onStateRef = useRef(onState);
   const [ready,setReady] = useState(false);
   const [playing,setPlaying] = useState(false);
   const [message,setMessage] = useState("Loading Apple Music…");
@@ -101,9 +102,10 @@ const AppleMusicQueuePlayer = forwardRef(function AppleMusicQueuePlayer({items,e
   },[developerToken]);
 
   useEffect(() => {if (musicRef.current) musicRef.current.volume = volume / 100;},[volume]);
+  useEffect(() => {onStateRef.current = onState;},[onState]);
   useEffect(() => {if (authorizedRef.current) void configureQueue();},[queue.map((item) => item.songId).join(",")]);
   useEffect(() => {if (!enabled) musicRef.current?.pause();},[enabled]);
-  useEffect(() => {onState?.({ready,playing,message,current:queue[currentIndex],queueLength:queue.length,provider:"apple",configured:true});},[currentIndex,message,onState,playing,queue,ready]);
+  useEffect(() => {onStateRef.current?.({ready,playing,message,current:queue[currentIndex],queueLength:queue.length,provider:"apple",configured:true});},[currentIndex,message,playing,queue,ready]);
 
   if (!queue.length) return <div className="spotify-queue-empty apple-queue-empty"><ListMusic /><b>Apple Music queue is empty</b><span>Paste a song link below.</span></div>;
   const current = queue[currentIndex] || queue[0];

@@ -45,6 +45,7 @@ const SpotifyQueuePlayer = forwardRef(function SpotifyQueuePlayer({ items, enabl
   const maxPositionRef = useRef(0);
   const advancingRef = useRef(false);
   const enabledRef = useRef(enabled);
+  const onStateRef = useRef(onState);
   const queueRef = useRef([]);
   const currentIndexRef = useRef(0);
   const [currentId, setCurrentId] = useState(null);
@@ -90,6 +91,7 @@ const SpotifyQueuePlayer = forwardRef(function SpotifyQueuePlayer({ items, enabl
   }));
 
   useEffect(() => { enabledRef.current = enabled; }, [enabled]);
+  useEffect(() => { onStateRef.current = onState; }, [onState]);
   useEffect(() => {
     if (!queue.length) { setCurrentId(null); return; }
     if (!queue.some((item) => item.id === currentId)) setCurrentId(queue[0].id);
@@ -153,8 +155,8 @@ const SpotifyQueuePlayer = forwardRef(function SpotifyQueuePlayer({ items, enabl
   }, [enabled, ready]);
 
   useEffect(() => {
-    onState?.({ ready, playing, message, current, queueLength:queue.length });
-  }, [current?.id, message, onState, playing, queue.length, ready]);
+    onStateRef.current?.({ ready, playing, message, current, queueLength:queue.length });
+  }, [current?.id, message, playing, queue.length, ready]);
 
   if (!queue.length) return <div className="spotify-queue-empty"><ListMusic /><b>Queue is empty</b><span>Add a Spotify track link below.</span></div>;
 

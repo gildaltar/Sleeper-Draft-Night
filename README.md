@@ -29,7 +29,7 @@ A six-team, broadcast-style fantasy football draft room powered by Sleeper, brow
 
 ## Local setup
 
-1. Install Node.js 20 or newer.
+1. Install Node.js 20.19 or newer.
 2. Copy `.env.example` to `.env.local` and fill in the public Supabase key, LiveKit credentials, and Apple MusicKit signing credentials.
 3. Run `npm install`.
 4. Run `npm run dev` for the UI, or `vercel dev` when testing the serverless API routes locally.
