@@ -1,19 +1,19 @@
 import { AlertTriangle, Radio, Trophy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { memberForPick, playerImage, rosterNeeds, roundAndPick } from "../lib/draft";
+import { draftSlotForMember, memberForPick, playerImage, rosterNeeds, roundAndPick } from "../lib/draft";
 import { useZoomDisplay } from "../hooks/useZoomDisplay";
 import CameraCard from "./CameraCard";
 import Countdown from "./Countdown";
 import EventOverlay from "./EventOverlay";
 import HelmetIdentity from "./HelmetIdentity";
 
-function PickTimer({ draft, picks, clockPaused, clockOverride }) {
+function PickTimer({ draft, picks }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const interval = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(interval); }, []);
-  const total = Number(clockOverride ?? 90);
+  const total = Math.max(1, Number(draft.settings.pickTimer || 90));
   const pickedAt = picks.at(-1)?.pickedAt || draft.lastPicked;
   const running = draft.status === "in_progress" || picks.at(-1)?.pickedAt;
-  const remaining = clockPaused ? total : running && pickedAt ? Math.max(0, total - Math.floor((now - Number(pickedAt)) / 1000)) : total;
+  const remaining = running && pickedAt ? Math.max(0, total - Math.floor((now - Number(pickedAt)) / 1000)) : total;
   return <><strong>{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, "0")}</strong><i><b style={{ width: `${Math.max(0, (remaining / total) * 100)}%` }} /></i></>;
 }
 
@@ -26,9 +26,11 @@ function CenterStage({ league, draft, members, players, picks, currentMember, pr
   const lastPick = picks.at(-1);
   const nextMember = memberForPick(pickNo + 1, draft, members);
   const profile = profiles.find((item) => Number(item.roster_id) === Number(currentMember?.rosterId));
+  const draftStarted = draft.status === "in_progress";
+  const draftSlot = draftSlotForMember(draft, currentMember);
   return (
     <section className={`center-stage ${spotlight ? "has-spotlight" : ""}`} style={{ "--team": profile?.accent || "#1f9bfe", "--team-2": profile?.accent_2 || "#b7ff3c" }}>
-      <header className="on-clock"><HelmetIdentity profile={profile} member={currentMember} compact /><div className="on-clock-copy"><span>{controlState.clock_paused ? "CLOCK PAUSED" : "ON THE CLOCK"}</span><h1>{profile?.team_name || currentMember?.teamName}</h1><p>{currentMember?.displayName} · Draft slot {currentMember?.rosterId}</p></div><div className="pick-timer"><small>LOCAL PICK TIMER</small><PickTimer draft={draft} picks={picks} clockPaused={controlState.clock_paused} clockOverride={controlState.clock_override_seconds} /></div></header>
+      <header className="on-clock"><HelmetIdentity profile={profile} member={currentMember} compact /><div className="on-clock-copy"><span>{draftStarted ? "ON THE CLOCK" : "FIRST PICK · DRAFT NOT STARTED"}</span><h1>{profile?.team_name || currentMember?.teamName}</h1><p>{currentMember?.displayName} · Draft slot {draftSlot}</p></div><div className="pick-timer"><small>{draftStarted ? "SLEEPER PICK TIMER" : "SLEEPER TIMER SET"}</small><PickTimer draft={draft} picks={picks} /></div></header>
       {spotlight && <div className="on-clock-spotlight"><div className="spotlight-kicker"><i /> LIVE FROM THE WAR ROOM</div>{spotlight}</div>}
       <div className="intelligence-grid">
         <article><h2>ROSTER NEEDS</h2><div className="needs-list">{needs.map(([position, count]) => <span key={position}><b>{position}</b>{count} required</span>)}</div></article>
@@ -43,7 +45,7 @@ function CenterStage({ league, draft, members, players, picks, currentMember, pr
 export default function Broadcast({ data, control, spectator = false, testMode = false, preview = "" }) {
   const { league, members, players } = data.bootstrap;
   const draft = data.live?.draft || data.bootstrap.draft;
-  const picks = control.state.mock_mode ? control.state.mock_picks || [] : data.live?.picks || [];
+  const picks = testMode ? control.state.mock_picks || [] : data.live?.picks || [];
   const pickNo = picks.length + 1;
   const currentMember = memberForPick(pickNo, draft, members) || members[0];
   const layout = control.state.camera_layout || "rails";
@@ -68,7 +70,7 @@ export default function Broadcast({ data, control, spectator = false, testMode =
     return () => { window.clearTimeout(reveal); window.clearTimeout(dismiss); };
   }, [members, picks.length]);
 
-  const camera = (member, spotlight = false) => <CameraCard key={member.userId} member={member} profile={profileByRoster.get(member.rosterId)} participant={zoom.participantByRoster.get(member.rosterId)} attach={zoom.attach} active={member.rosterId === currentMember.rosterId} simulated={testMode} spotlight={spotlight} />;
+  const camera = (member, spotlight = false) => <CameraCard key={member.userId} member={member} draft={draft} profile={profileByRoster.get(member.rosterId)} participant={zoom.participantByRoster.get(member.rosterId)} attach={zoom.attach} active={draft.status === "in_progress" && member.rosterId === currentMember.rosterId} simulated={testMode} spotlight={spotlight} />;
   const reactionMembers = members.filter((member) => Number(member.rosterId) !== Number(currentMember.rosterId));
   const camerasVisible = control.state.scene !== "draft" && control.state.camera_enabled !== false && layout !== "hidden";
   const announcement = control.state.announcement && typeof control.state.announcement === "object" ? control.state.announcement : null;

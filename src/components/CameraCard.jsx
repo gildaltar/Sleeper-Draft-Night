@@ -1,10 +1,10 @@
 import { MicOff, VideoOff } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { stadium } from "../lib/showAssets";
-import { avatarUrl, parsePanelProfile } from "../lib/draft";
+import { avatarUrl, draftSlotForMember, parsePanelProfile } from "../lib/draft";
 import HelmetIdentity from "./HelmetIdentity";
 
-export default function CameraCard({ member, profile, participant, attach, active, compact = false, simulated = false, spotlight = false }) {
+export default function CameraCard({ member, draft, profile, participant, attach, active, compact = false, simulated = false, spotlight = false }) {
   const mount = useRef(null);
   useEffect(() => {
     if (simulated || !participant?.bVideoOn || !mount.current) return undefined;
@@ -16,6 +16,7 @@ export default function CameraCard({ member, profile, participant, attach, activ
   const name = profile?.team_name || member.teamName;
   const avatar = avatarUrl(member.avatar);
   const panel = parsePanelProfile(profile?.panel_style);
+  const draftSlot = draftSlotForMember(draft, member);
   const cameraBackground = panel.backgroundMode === "custom" && panel.background ? panel.background : panel.backgroundMode === "stadium" ? stadium : "";
   return (
     <article
@@ -29,7 +30,7 @@ export default function CameraCard({ member, profile, participant, attach, activ
             <b>{simulated ? "Simulated camera" : participant ? "Camera off" : "Waiting for owner"}</b>
           </div>
         )}
-        <strong className="slot-number">{member.rosterId}</strong>
+        <strong className="slot-number">{draftSlot}</strong>
         {active && <em>ON THE CLOCK</em>}
         {!simulated && <div className="media-state">
           {!participant?.bVideoOn && <VideoOff size={14} />}
@@ -40,7 +41,7 @@ export default function CameraCard({ member, profile, participant, attach, activ
         <HelmetIdentity profile={profile} member={member} compact />
         <div>
           <h3>{name}</h3>
-          <span>{member.displayName} · Draft slot {member.rosterId}</span>
+          <span>{member.displayName} · Draft slot {draftSlot}</span>
         </div>
         {profile?.badge && <b>{profile.badge}</b>}
       </footer>

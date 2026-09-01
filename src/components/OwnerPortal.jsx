@@ -87,15 +87,18 @@ export default function OwnerPortal({ data, control, rosterId, testMode = false 
     cameraMount.current?.replaceChildren();
     setCameraState("idle");
   };
-  const needs = useMemo(() => rosterNeeds(data.bootstrap.league, control.state.mock_mode ? control.state.mock_picks || [] : data.live?.picks || [], rosterId), [control.state, data, rosterId]);
-  const activePicks = control.state.mock_mode ? control.state.mock_picks || [] : data.live?.picks || [];
+  const activePicks = testMode ? control.state.mock_picks || [] : data.live?.picks || [];
+  const needs = useMemo(() => rosterNeeds(data.bootstrap.league, activePicks, rosterId), [activePicks, data.bootstrap.league, rosterId]);
   const activeDraft = data.live?.draft || data.bootstrap.draft;
-  const isOnClock = Number(memberForPick(activePicks.length + 1, activeDraft, data.bootstrap.members)?.rosterId) === Number(rosterId);
+  const isOnClock = (testMode || activeDraft.status === "in_progress") && Number(memberForPick(activePicks.length + 1, activeDraft, data.bootstrap.members)?.rosterId) === Number(rosterId);
   useEffect(() => {
     const pickNo = activePicks.length + 1;
     if (unlocked && isOnClock && lastAutoOpened.current !== pickNo) { lastAutoOpened.current = pickNo; setPickerOpen(true); }
   }, [activePicks.length, isOnClock, unlocked]);
   const logo = form.logo || (form.favorite !== "custom" ? `https://a.espncdn.com/i/teamlogos/nfl/500/${form.favorite}.png` : "");
+  const cameraReady = cameraState === "joined";
+  const cameraFailed = cameraState === "error";
+  const readinessText = cameraReady ? "Ready" : cameraFailed ? "Error" : cameraState === "connecting" ? "Starting" : "Not started";
   const loadLogo = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -141,7 +144,8 @@ export default function OwnerPortal({ data, control, rosterId, testMode = false 
         <section className="camera-workspace">
           <div className="studio-preview-head"><div><span>LIVE PREVIEW</span><b>{previewState.replace("-", " ")}</b></div><div>{[["normal","Normal"],["on-clock","On the clock"],["celebration","Pick celebration"]].map(([value,label]) => <button className={previewState === value ? "active" : ""} key={value} onClick={() => setPreviewState(value)}>{label}</button>)}</div></div>
           <div className={`owner-camera studio-frame style-${form.panelStyle} preview-${previewState}`} style={{ backgroundImage: form.backgroundMode === "custom" && form.background ? `linear-gradient(#02050a44,#02050a44),url(${form.background})` : form.backgroundMode === "stadium" ? `linear-gradient(#02050a44,#02050a44),url(${stadium})` : undefined }} ref={cameraMount}><div className="camera-placeholder"><Camera /><b>{cameraState === "joined" ? "Camera live" : "Camera not started"}</b><small>16:9 broadcast preview</small></div><div className={`studio-nameplate nameplate-${form.nameplate}`}><HelmetIdentity profile={{ ...profile, team_name:form.teamName, panel_style:[form.panelStyle,form.intensity,form.favorite,form.nameplate,encodeURIComponent(form.logo||"")].join("|") }} member={member} compact /><div><strong>{form.teamName}</strong><small>{form.motto || "Make draft night yours"}</small></div><b>{form.badge || "LIVE"}</b></div>{previewState === "on-clock" && <em className="studio-state">ON THE CLOCK · 0:45</em>}{previewState === "celebration" && <div className="celebration-burst"><Sparkles /> PICK CELEBRATION</div>}</div>
-          <div className="readiness"><span><Check /><b>CAMERA</b>Ready</span><span><Mic /><b>MICROPHONE</b>Ready</span><span><Signal /><b>NETWORK</b>Good</span><button disabled={cameraState === "connecting" || cameraState === "joined"} onClick={startCamera}><Camera />{cameraState === "connecting" ? "Starting…" : "Start camera"}</button><button disabled={cameraState !== "joined"} onClick={stopCamera}><StopCircle />Stop camera</button></div>
+          <div className={`readiness state-${cameraState}`}><span><Check /><b>CAMERA</b>{readinessText}</span><span><Mic /><b>MICROPHONE</b>{readinessText}</span><span><Signal /><b>CONNECTION</b>{cameraReady ? "Connected" : cameraFailed ? "Failed" : "Waiting"}</span><button disabled={cameraState === "connecting" || cameraReady} onClick={startCamera}><Camera />{cameraState === "connecting" ? "Starting…" : cameraFailed ? "Retry camera" : "Start camera"}</button><button disabled={!cameraReady} onClick={stopCamera}><StopCircle />Stop camera</button></div>
+          {(cameraState === "connecting" || cameraFailed || cameraReady) && <div className={`camera-inline-status ${cameraFailed ? "error" : ""}`}><i />{message || (cameraReady ? "Camera and microphone are live" : "Starting camera…")}</div>}
           <div className="owner-needs"><div><small>ROSTER NEEDS</small>{needs.slice(0, 7).map(([position, count]) => <span key={position}><b>{count}</b>{position}</span>)}</div><div><small>{isOnClock ? "YOU'RE UP" : "DRAFT PLAN"}</small><strong>{isOnClock ? "Pick now" : `${activePicks.length + 1} live`}</strong><button className="open-draft-desk" onClick={() => setPickerOpen(true)}><ListPlus /> Open Draft Desk</button></div></div>
         </section>
         <aside className="container-editor studio-editor">
@@ -160,7 +164,7 @@ export default function OwnerPortal({ data, control, rosterId, testMode = false 
           {message && <div className={message.includes("updated") || message.includes("saved") ? "form-success" : "form-error"}>{message}</div>}
         </aside>
       </div>
-      {pickerOpen && <div className="draft-desk-backdrop"><DraftDesk data={data} control={control} rosterId={rosterId} modal onClose={() => setPickerOpen(false)} /></div>}
+      {pickerOpen && <div className="draft-desk-backdrop"><DraftDesk data={data} control={control} rosterId={rosterId} accessPassword={password} modal onClose={() => setPickerOpen(false)} /></div>}
     </main>
   );
 }

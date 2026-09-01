@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { memberForPick, nextMockPick, parsePanelProfile, playerImage, rosterNeeds, roundAndPick } from "./draft";
+import { draftSlotForMember, memberForPick, nextMockPick, parsePanelProfile, playerImage, rosterNeeds, roundAndPick } from "./draft";
 
 const members = Array.from({ length: 6 }, (_, index) => ({ userId: `u${index + 1}`, rosterId: index + 1, teamName: `Team ${index + 1}` }));
 const draft = { settings: { teams: 6, rounds: 22 }, draftOrder: Object.fromEntries(members.map((member) => [member.userId, member.rosterId])) };
@@ -20,6 +20,13 @@ describe("snake draft order", () => {
     expect(picks.map((pick) => pick.player.playerId)).toEqual(Array.from({ length: 20 }, (_, index) => String(index)));
     expect(picks[6].rosterId).toBe(6);
     expect(picks[11].rosterId).toBe(1);
+  });
+
+  it("uses Sleeper draft slots instead of roster IDs", () => {
+    const sleeperOrder = { ...draft, draftOrder: { u1:4, u2:3, u3:6, u4:1, u5:5, u6:2 } };
+    expect(draftSlotForMember(sleeperOrder, members[0])).toBe(4);
+    expect(memberForPick(1, sleeperOrder, members).userId).toBe("u4");
+    expect(memberForPick(6, sleeperOrder, members).userId).toBe("u3");
   });
 });
 

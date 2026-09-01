@@ -4,20 +4,20 @@ import { memberForPick, playerImage, roundAndPick } from "../lib/draft";
 import EventOverlay from "./EventOverlay";
 import HelmetIdentity from "./HelmetIdentity";
 
-function LocalPickClock({ draft, picks, paused, override }) {
+function SleeperPickClock({ draft, picks }) {
   const [now, setNow] = useState(Date.now());
   const startedAt = picks.at(-1)?.pickedAt || draft.lastPicked || now;
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
-  const base = override ?? 90;
+  const base = Math.max(1, Number(draft.settings.pickTimer || 90));
   const running = draft.status === "in_progress" || picks.length > 0;
-  const remaining = paused || !running ? base : Math.max(0, base - Math.floor((now - Number(startedAt)) / 1000));
+  const remaining = !running ? base : Math.max(0, base - Math.floor((now - Number(startedAt)) / 1000));
   return <strong>{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2,"0")}</strong>;
 }
 
 export default function Spectator({ data, control }) {
   const { league, members } = data.bootstrap;
   const draft = data.live?.draft || data.bootstrap.draft;
-  const picks = control.state.mock_mode ? control.state.mock_picks || [] : data.live?.picks || [];
+  const picks = data.live?.picks || [];
   const pickNo = picks.length + 1;
   const current = memberForPick(pickNo, draft, members) || members[0];
   const next = memberForPick(pickNo + 1, draft, members);
@@ -37,13 +37,14 @@ export default function Spectator({ data, control }) {
   const recent = [...picks].slice(-5).reverse();
   const { round, slot } = roundAndPick(pickNo, draft.settings.teams);
   const announcement = control.state.announcement && typeof control.state.announcement === "object" ? control.state.announcement : null;
+  const draftStarted = draft.status === "in_progress";
   return (
     <main className="spectator-view" style={{ "--team":profile?.accent || "#b8ff38", "--team-2":profile?.accent_2 || "#21a8ff" }}>
-      <header><div><span><i /> LIVE DRAFT COVERAGE</span><h1>{league.name}</h1></div><div className="spectator-clock"><small>LOCAL 90-SECOND CLOCK</small><LocalPickClock draft={draft} picks={picks} paused={control.state.clock_paused} override={control.state.clock_override_seconds} /></div></header>
+      <header><div><span><i /> {draftStarted ? "LIVE DRAFT COVERAGE" : "DRAFT NIGHT READY"}</span><h1>{league.name}</h1></div><div className="spectator-clock"><small>{draftStarted ? "SLEEPER PICK TIMER" : "SLEEPER TIMER SET"}</small><SleeperPickClock draft={draft} picks={picks} /></div></header>
       <section className="spectator-hero">
         <div className="spectator-team">
           <HelmetIdentity profile={profile} member={current} />
-          <div><span>ON THE CLOCK · PICK {round}.{String(slot).padStart(2,"0")}</span><h2>{profile?.team_name || current.teamName}</h2><p>{current.displayName} is making the selection</p></div>
+          <div><span>{draftStarted ? "ON THE CLOCK" : "FIRST PICK"} · PICK {round}.{String(slot).padStart(2,"0")}</span><h2>{profile?.team_name || current.teamName}</h2><p>{draftStarted ? `${current.displayName} is making the selection` : `${current.displayName} has the first selection`}</p></div>
         </div>
         <div className="spectator-next"><small>UP NEXT</small><b>{next?.teamName}</b><span>{next?.displayName}</span></div>
       </section>

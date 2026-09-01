@@ -41,9 +41,12 @@ export const profileLogo = (profile) => {
 export function orderedMembers(draft, members) {
   return [...members].sort(
     (a, b) =>
-      Number(draft?.draftOrder?.[a.userId] ?? a.rosterId) -
-      Number(draft?.draftOrder?.[b.userId] ?? b.rosterId),
+      draftSlotForMember(draft, a) - draftSlotForMember(draft, b),
   );
+}
+
+export function draftSlotForMember(draft, member) {
+  return Number(draft?.draftOrder?.[member?.userId] ?? member?.rosterId ?? 0);
 }
 
 export function memberForPick(pickNo, draft, members) {

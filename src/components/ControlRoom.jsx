@@ -1,9 +1,9 @@
-import { AlertOctagon, ArrowLeft, ArrowLeftRight, BellRing, Clock3, FastForward, LogOut, Pause, Play, Plus, Save, Shield, Trash2, Trophy, Volume2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { nextMockPick } from "../lib/draft";
+import { AlertOctagon, ArrowLeft, ArrowLeftRight, BellRing, Clock3, ExternalLink, LogOut, Play, Plus, Save, Shield, Trash2, Trophy, Volume2, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { LEAGUE_ID } from "../lib/config";
 import { afterAuthLock, checkCommissioner } from "../lib/controlAuth";
 import { supabase } from "../lib/supabase";
+import PickOperator from "./PickOperator";
 
 function Login({ onReady }) {
   const [email, setEmail] = useState("");
@@ -41,7 +41,6 @@ export default function ControlRoom({ control, bootstrap, live }) {
   const [session, setSession] = useState(null);
   const [authorized, setAuthorized] = useState(false);
   const [ready, setReady] = useState(false);
-  const [autoRun, setAutoRun] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [authIssue, setAuthIssue] = useState("");
@@ -50,8 +49,6 @@ export default function ControlRoom({ control, bootstrap, live }) {
   const [teamName, setTeamName] = useState(bootstrap.members[0]?.teamName || "");
   const [overlay, setOverlay] = useState({ type:"announcement", kicker:"COMMISSIONER UPDATE", title:"Draft room announcement", detail:"Stand by for an update from the commissioner.", duration:7, sound:"alert" });
   const [ticker, setTicker] = useState({ lane:"bottom", kind:"news", text:"", accent:"#b8ff38" });
-  const stateRef = useRef(control.state);
-  stateRef.current = control.state;
 
   const verifyCommissioner = useCallback(async (active) => {
     if (!active) { setSession(null); setAuthorized(false); setReady(true); return; }
@@ -117,21 +114,9 @@ export default function ControlRoom({ control, bootstrap, live }) {
     catch (requestError) { setError(requestError.message || "Control update failed"); }
   };
 
-  const addMockPick = async () => {
-    const picks = stateRef.current.mock_picks || [];
-    const pick = nextMockPick({ draft: live?.draft || bootstrap.draft, members: bootstrap.members, players: bootstrap.players, picks });
-    if (!pick) { setAutoRun(false); return; }
-    await control.updateState({ mock_mode: true, mock_picks: [...picks, pick] });
-  };
   const selectedMember = bootstrap.members.find((member) => Number(member.rosterId) === Number(teamId));
   const chooseTeam = (value) => { setTeamId(value); const member = bootstrap.members.find((item) => Number(item.rosterId) === Number(value)); setTeamName(control.profiles.find((item) => Number(item.roster_id) === Number(value))?.team_name || member?.teamName || ""); };
   const fireOverlay = () => control.updateState({ announcement:{ ...overlay, duration:Number(overlay.duration), expiresAt:Date.now()+Number(overlay.duration)*1000, nonce:Date.now() } });
-
-  useEffect(() => {
-    if (!autoRun || !control.state.mock_mode) return undefined;
-    const timer = window.setTimeout(() => run(addMockPick, "Mock pick advanced"), 3200);
-    return () => window.clearTimeout(timer);
-  }, [autoRun, control.state.mock_mode, control.state.mock_picks?.length]);
 
   if (!ready) return <main className="loading-screen"><span>Opening secure controls…</span></main>;
   if (!session) return <><Login onReady={verifyCommissioner} />{authIssue && <div className="auth-recovery"><span>{authIssue}</span><button onClick={() => window.location.reload()}>Retry saved session</button></div>}</>;
@@ -142,6 +127,7 @@ export default function ControlRoom({ control, bootstrap, live }) {
       <header className="control-head"><a href="/"><ArrowLeft />Back to Draft Night</a><div><span>COMMISSIONER CONTROL PLANE</span><h1>Broadcast Command Center</h1></div><button onClick={() => supabase.auth.signOut()}><LogOut size={17} />Sign out</button></header>
       {(message || error) && <div className={error ? "form-error" : "form-success"}>{error || message}</div>}
       <div className="control-grid">
+        <PickOperator bootstrap={bootstrap} live={live} enabled={authorized} />
         <article className="control-card panic-card">
           <h2><AlertOctagon /> Draft-night safety</h2>
           <p>Immediately switch every display to a holding screen without touching Sleeper or mock draft state.</p>
@@ -154,18 +140,7 @@ export default function ControlRoom({ control, bootstrap, live }) {
           <h3>Live-show camera placement</h3>
           <div className="button-grid">{[["rails","Side rails"],["filmstrip","Bottom reactions"],["hidden","No cameras"]].map(([value,label]) => <button className={control.state.camera_layout === value ? "active" : ""} key={value} onClick={() => run(() => control.updateState({ camera_layout:value, camera_enabled:value!=="hidden", scene:"split" }), `${label} selected`)}>{label}</button>)}</div>
         </article>
-        <article className="control-card clock-control"><h2><Clock3 /> Local pick clock</h2><p>This show clock stays at 90 seconds even if Sleeper is set longer. Pause it for delays, breaks, or commissioner rulings.</p><div className="mock-state"><i className={!control.state.clock_paused ? "on" : ""}/><b>{control.state.clock_paused ? "CLOCK PAUSED" : "CLOCK RUNNING"}</b><strong>{control.state.clock_override_seconds ?? 90} SEC</strong></div><div className="button-grid"><button onClick={() => run(() => control.updateState({clock_paused:!control.state.clock_paused}), control.state.clock_paused?"Clock resumed":"Clock paused")}>{control.state.clock_paused?<Play/>:<Pause/>}{control.state.clock_paused?"Resume":"Pause"}</button><button onClick={() => run(() => control.updateState({clock_override_seconds:90,clock_paused:false}),"Clock reset to 90 seconds")}>Reset 90</button><button onClick={() => run(() => control.updateState({clock_override_seconds:300,clock_paused:true}),"Five-minute halftime clock ready")}>5-min break</button></div></article>
-        <article className="control-card mock-control">
-          <h2><FastForward /> Mock draft</h2>
-          <div className="mock-state"><i className={control.state.mock_mode ? "on" : ""} /><b>{control.state.mock_mode ? "MOCK MODE LIVE" : "OFFICIAL SLEEPER MODE"}</b><strong>{control.state.mock_picks?.length || 0} PICKS</strong></div>
-          <div className="mock-actions">
-            <button onClick={() => run(() => control.updateState({ mock_mode: true, mock_picks: [] }), "Mock mode started")}><Play />Start mock</button>
-            <button disabled={!control.state.mock_mode} onClick={() => run(addMockPick, "Next mock pick added")}><FastForward />Next pick</button>
-            <button disabled={!control.state.mock_mode} className={autoRun ? "active" : ""} onClick={() => setAutoRun((current) => !current)}>{autoRun ? <Pause /> : <Play />}{autoRun ? "Stop auto" : "Auto run"}</button>
-            <button disabled={!control.state.mock_mode} onClick={() => run(() => control.updateState({ mock_mode: false, mock_picks: [] }), "Official Sleeper feed restored")}>Official feed</button>
-          </div>
-          <p>Auto run advances one synchronized pick every 3.2 seconds and stops cleanly when official mode returns.</p>
-        </article>
+        <article className="control-card clock-control"><h2><Clock3 /> Sleeper draft truth</h2><p>The public clock and on-clock status now follow Sleeper directly. Rehearsals are isolated in the Test Lab and can never replace official picks on public screens.</p><div className="mock-state"><i className={live?.draft?.status === "in_progress" ? "on" : ""}/><b>{String(live?.draft?.status || bootstrap.draft.status).replace("_", " ").toUpperCase()}</b><strong>{Number(live?.draft?.settings?.pickTimer || bootstrap.draft.settings.pickTimer)} SEC</strong></div><div className="button-grid"><a className="control-link-button" href={`https://sleeper.app/draft/nfl/${live?.draft?.draftId || bootstrap.draft.draftId}`} target="sleeper-draft-room" rel="noreferrer"><ExternalLink />Open Sleeper settings</a><a className="control-link-button" href="/test" target="draft-test-lab"><Play />Open safe Test Lab</a></div></article>
         <article className="control-card">
           <h2><Volume2 /> Event audio</h2>
           <p>Viewers can start the live mix once to hear continuous draft-night background music, the opening fanfare, pick chimes, and alert stingers.</p>

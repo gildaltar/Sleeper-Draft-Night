@@ -9,9 +9,11 @@ import DraftAudio from "./components/DraftAudio";
 import OwnerPortal from "./components/OwnerPortal";
 import Spectator from "./components/Spectator";
 import Teams from "./components/Teams";
+import TestPanel from "./components/TestPanel";
 import Ticker from "./components/Ticker";
 import { useBroadcastControl } from "./hooks/useBroadcastControl";
 import { useDraftData } from "./hooks/useDraftData";
+import { useTestControl } from "./hooks/useTestControl";
 
 function useRoute() {
   const [location, setLocation] = useState(() => `${window.location.pathname}${window.location.search}`);
@@ -37,12 +39,18 @@ function Loading({ error }) {
   );
 }
 
-function Shell({ children, data, control, active }) {
-  const picks = control.state.mock_mode ? control.state.mock_picks || [] : data.live?.picks || [];
+function TestLab({ data, team, teamStudio = false }) {
+  const control = useTestControl(data.bootstrap);
+  if (teamStudio) return <OwnerPortal data={data} control={control} rosterId={team} testMode />;
+  return <div className="test-lab-shell"><Broadcast data={data} control={control} testMode /><TestPanel control={control} bootstrap={data.bootstrap} live={data.live} /></div>;
+}
+
+function Shell({ children, data, control, active, team }) {
+  const picks = data.live?.picks || [];
   const draft = data.live?.draft || data.bootstrap.draft;
   const [clock, setClock] = useState(() => new Date());
   useEffect(() => { const timer = window.setInterval(() => setClock(new Date()), 1000); return () => window.clearInterval(timer); }, []);
-  const nav = [["/", "Home"], ["/broadcast", "Draft"], ["/board", "Board"], ["/teams", "Teams"], ["/watch", "Watch"]];
+  const nav = [["/", "Home"], ["/broadcast", "Draft"], ["/board", "Board"], ["/teams", "Teams"], [`/picker?team=${team}`, "Draft Desk"], ["/watch", "Watch"]];
   const tickerItems = [
     ...control.tickers,
     ...picks.slice(-8).map((pick) => ({ id:`pick-${pick.pickNo}`, lane:"bottom", kind:"pick", accent:"#b8ff38", text:`${pick.round}.${String(pick.draftSlot).padStart(2,"0")} · ${pick.player.name} · ${pick.player.position} ${pick.player.team}` })),
@@ -53,12 +61,13 @@ function Shell({ children, data, control, active }) {
       {control.state.top_ticker_enabled !== false ? <Ticker lane="top" items={tickerItems} speed={control.state.ticker_speed} /> : <div className="ticker-spacer" />}
       <header className="app-header">
         <a className="brand" href="/"><i>SDN</i><div><b>STROUDY DRAFT NIGHT</b><span>LIVE WAR ROOM</span></div></a>
-        <nav>{nav.map(([href, label]) => <a className={active === href ? "active" : ""} href={href} key={href}>{label}</a>)}</nav>
+        <nav>{nav.map(([href, label]) => <a className={active === href.split("?")[0] ? "active" : ""} href={href} key={href}>{label}</a>)}</nav>
         <div className="header-status"><span className={data.status === "live" ? "live" : "offline"}><i />{data.status === "live" ? "SLEEPER LIVE" : "RECONNECTING"}</span><DraftAudio picks={picks} draftStatus={draft.status} cue={control.state.announcement?.nonce || control.state.announcement?.title} /><span className="header-clock">{clock.toLocaleTimeString([], { hour:"numeric", minute:"2-digit" })}</span><button className="fullscreen-button" onClick={fullscreen} title="Toggle fullscreen"><Expand size={17} /></button><a href="/control" title="Commissioner controls"><Settings size={17} /></a></div>
       </header>
       <div className="app-content">{children}</div>
       {control.state.bottom_ticker_enabled !== false ? <Ticker lane="bottom" items={tickerItems} speed={Math.max(18, control.state.ticker_speed - 4)} label={picks.length ? "DRAFT FEED" : "HEADLINES"} /> : <div className="ticker-spacer" />}
       <footer className="app-footer"><span><ShieldCheck size={13} /> PRIVATE TEAM ACCESS</span><b>{data.bootstrap.league.name}</b><span><Users size={13} /> {data.bootstrap.members.length} WAR ROOMS</span></footer>
+      <nav className="mobile-primary-nav" aria-label="Draft Night navigation">{nav.map(([href, label]) => <a className={active === href.split("?")[0] ? "active" : ""} href={href} key={href}>{label === "Draft Desk" ? "Pick" : label === "Draft" ? "Live" : label}</a>)}</nav>
     </div>
   );
 }
@@ -69,10 +78,20 @@ export default function App() {
   const control = useBroadcastControl();
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 15000); return () => window.clearInterval(timer); }, []);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const syncViewport = () => document.documentElement.style.setProperty("--app-height", `${Math.round(viewport?.height || window.innerHeight)}px`);
+    syncViewport();
+    viewport?.addEventListener("resize", syncViewport);
+    window.addEventListener("orientationchange", syncViewport);
+    window.addEventListener("resize", syncViewport);
+    return () => { viewport?.removeEventListener("resize", syncViewport); window.removeEventListener("orientationchange", syncViewport); window.removeEventListener("resize", syncViewport); };
+  }, []);
   if (!data.bootstrap) return <Loading error={data.error} />;
+  if (route.path === "/test" || route.path === "/test/team") return <TestLab data={data} team={route.team} teamStudio={route.path === "/test/team"} />;
   if (route.path === "/control") return <ControlRoom control={control} bootstrap={data.bootstrap} live={data.live} />;
   if (route.path === "/team") return <OwnerPortal data={data} control={control} rosterId={route.team} />;
-  const picks = control.state.mock_mode ? control.state.mock_picks || [] : data.live?.picks || [];
+  const picks = data.live?.picks || [];
   let view = <Broadcast data={data} control={control} preview={route.preview} />;
   const draft = data.live?.draft || data.bootstrap.draft;
   const preshow = draft.status === "pre_draft" && now < Number(draft.startTime) - 90 * 60 * 1000;
@@ -80,6 +99,6 @@ export default function App() {
   if (route.path === "/watch" || route.path === "/spectator") view = <Spectator data={data} control={control} />;
   if (route.path === "/picker") view = <DraftDesk data={data} control={control} rosterId={route.team} />;
   if (route.path === "/board" || control.state.scene === "board") view = <Board players={data.bootstrap.players} picks={picks} />;
-  if (route.path === "/teams") view = <Teams league={data.bootstrap.league} members={data.bootstrap.members} picks={picks} profiles={control.profiles} />;
-  return <Shell data={data} control={control} active={route.path}>{view}</Shell>;
+  if (route.path === "/teams") view = <Teams league={data.bootstrap.league} draft={draft} members={data.bootstrap.members} picks={picks} profiles={control.profiles} />;
+  return <Shell data={data} control={control} active={route.path} team={route.team}>{view}</Shell>;
 }

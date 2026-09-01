@@ -7,6 +7,14 @@ const instanceId = () =>
 
 const normalize = (value = "") => value.toLowerCase().replace(/[^a-z0-9]/g, "");
 
+function withTimeout(promise, milliseconds, stage) {
+  let timeout;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timeout = window.setTimeout(() => reject(new Error(`${stage} timed out. Check permissions and try again.`)), milliseconds); }),
+  ]).finally(() => window.clearTimeout(timeout));
+}
+
 export function memberForParticipant(participant, members) {
   const participantName = normalize(participant?.displayName);
   return members.find(
@@ -118,22 +126,35 @@ export function useZoomDisplay({ members, spectator = false, enabled = true }) {
 
 export async function startOwnerCamera({ member, mount, password, onStatus }) {
   onStatus?.("connecting", "Requesting camera and microphone…");
-  const token = await getVideoToken("owner", member.rosterId, password);
-  const { default: ZoomVideo } = await import("@zoom/videosdk");
-  const requirements = ZoomVideo.checkSystemRequirements();
-  if (!requirements.video || !requirements.audio) throw new Error("This browser does not support the camera and microphone features Zoom requires");
-  const client = ZoomVideo.createClient();
-  await client.init("en-US", "Global", { patchJsMedia: true, stayAwake: true });
-  await client.join(token.topic, token.token, `Team ${member.displayName}`);
-  const stream = client.getMediaStream();
-  await stream.startAudio();
-  await stream.startVideo();
-  const current = client.getCurrentUserInfo();
-  const video = await stream.attachVideo(current.userId, 3);
-  if (video instanceof HTMLElement && mount) {
+  let client;
+  let ZoomVideo;
+  try {
+    const token = await withTimeout(getVideoToken("owner", member.rosterId, password), 8000, "Camera authorization");
+    onStatus?.("connecting", "Loading secure video controls…");
+    ({ default: ZoomVideo } = await withTimeout(import("@zoom/videosdk"), 12000, "Video SDK loading"));
+    const requirements = ZoomVideo.checkSystemRequirements();
+    if (!requirements.video || !requirements.audio) throw new Error("This browser does not support the camera and microphone features Zoom requires");
+    client = ZoomVideo.createClient();
+    onStatus?.("connecting", "Initializing camera devices…");
+    await withTimeout(client.init("en-US", "Global", { patchJsMedia: true, stayAwake: true }), 12000, "Camera initialization");
+    onStatus?.("connecting", "Joining the Draft Night camera room…");
+    await withTimeout(client.join(token.topic, token.token, `Team ${member.displayName}`), 15000, "Camera-room join");
+    const stream = client.getMediaStream();
+    onStatus?.("connecting", "Starting microphone…");
+    await withTimeout(stream.startAudio(), 10000, "Microphone start");
+    onStatus?.("connecting", "Starting camera…");
+    await withTimeout(stream.startVideo(), 15000, "Camera start");
+    const current = client.getCurrentUserInfo();
+    onStatus?.("connecting", "Attaching local preview…");
+    const video = await withTimeout(stream.attachVideo(current.userId, 3), 10000, "Local preview");
+    if (!(video instanceof HTMLElement) || !mount) throw new Error("Camera started, but the local preview could not be attached");
     video.classList.add("zoom-video-player");
     mount.replaceChildren(video);
+    onStatus?.("joined", "Camera and microphone are live");
+    return { client, destroy: () => ZoomVideo.destroyClient(client), stream };
+  } catch (error) {
+    await Promise.resolve(client?.leave?.(false)).catch(() => undefined);
+    if (client && ZoomVideo) await Promise.resolve(ZoomVideo.destroyClient(client)).catch(() => undefined);
+    throw error;
   }
-  onStatus?.("joined", "");
-  return { client, destroy: () => ZoomVideo.destroyClient(client), stream };
 }
