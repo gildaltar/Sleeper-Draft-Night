@@ -13,6 +13,7 @@
     }
   ],
   "rewrites": [
+    { "source": "/favicon.ico", "destination": "/favicon.svg" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
