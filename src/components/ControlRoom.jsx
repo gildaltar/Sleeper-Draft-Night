@@ -1,4 +1,4 @@
-import { AlertOctagon, ArrowLeftRight, BellRing, FastForward, LogOut, Pause, Play, Save, Shield, Trophy, Volume2, X } from "lucide-react";
+import { AlertOctagon, ArrowLeft, ArrowLeftRight, BellRing, Clock3, FastForward, LogOut, Pause, Play, Plus, Save, Shield, Trash2, Trophy, Volume2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nextMockPick } from "../lib/draft";
 import { LEAGUE_ID } from "../lib/config";
@@ -47,6 +47,9 @@ export default function ControlRoom({ control, bootstrap, live }) {
   const [authIssue, setAuthIssue] = useState("");
   const [teamId, setTeamId] = useState("1");
   const [teamPassword, setTeamPassword] = useState("");
+  const [teamName, setTeamName] = useState(bootstrap.members[0]?.teamName || "");
+  const [overlay, setOverlay] = useState({ type:"announcement", kicker:"COMMISSIONER UPDATE", title:"Draft room announcement", detail:"Stand by for an update from the commissioner.", duration:7, sound:"alert" });
+  const [ticker, setTicker] = useState({ lane:"bottom", kind:"news", text:"", accent:"#b8ff38" });
   const stateRef = useRef(control.state);
   stateRef.current = control.state;
 
@@ -120,6 +123,9 @@ export default function ControlRoom({ control, bootstrap, live }) {
     if (!pick) { setAutoRun(false); return; }
     await control.updateState({ mock_mode: true, mock_picks: [...picks, pick] });
   };
+  const selectedMember = bootstrap.members.find((member) => Number(member.rosterId) === Number(teamId));
+  const chooseTeam = (value) => { setTeamId(value); const member = bootstrap.members.find((item) => Number(item.rosterId) === Number(value)); setTeamName(control.profiles.find((item) => Number(item.roster_id) === Number(value))?.team_name || member?.teamName || ""); };
+  const fireOverlay = () => control.updateState({ announcement:{ ...overlay, duration:Number(overlay.duration), expiresAt:Date.now()+Number(overlay.duration)*1000, nonce:Date.now() } });
 
   useEffect(() => {
     if (!autoRun || !control.state.mock_mode) return undefined;
@@ -133,21 +139,22 @@ export default function ControlRoom({ control, bootstrap, live }) {
 
   return (
     <main className="control-room content-view">
-      <header className="control-head"><div><span>COMMISSIONER CONTROL PLANE</span><h1>Broadcast Command Center</h1></div><button onClick={() => supabase.auth.signOut()}><LogOut size={17} />Sign out</button></header>
+      <header className="control-head"><a href="/"><ArrowLeft />Back to Draft Night</a><div><span>COMMISSIONER CONTROL PLANE</span><h1>Broadcast Command Center</h1></div><button onClick={() => supabase.auth.signOut()}><LogOut size={17} />Sign out</button></header>
       {(message || error) && <div className={error ? "form-error" : "form-success"}>{error || message}</div>}
       <div className="control-grid">
         <article className="control-card panic-card">
           <h2><AlertOctagon /> Draft-night safety</h2>
           <p>Immediately switch every display to a holding screen without touching Sleeper or mock draft state.</p>
           <button className="panic" onClick={() => run(() => control.updateState({ scene: "holding" }), "Holding screen live")}>Panic / hold broadcast</button>
-          <button onClick={() => run(() => control.updateState({ scene: "split", camera_layout: "rails", camera_enabled: true }), "Video + Draft restored")}>Restore Video + Draft</button>
+          <button onClick={() => run(() => control.updateState({ scene: "split", camera_layout: "rails", camera_enabled: true }), "Live show restored")}>Restore live show</button>
         </article>
         <article className="control-card">
           <h2>Broadcast scene</h2>
-          <div className="button-grid">{[["split","Video + Draft"],["draft","Draft only"],["cameras","Camera wall"],["board","Player board"],["holding","Holding"]].map(([value,label]) => <button className={control.state.scene === value ? "active" : ""} key={value} onClick={() => run(() => control.updateState({ scene: value }), `${label} live`)}>{label}</button>)}</div>
-          <h3>Camera layout</h3>
-          <div className="button-grid">{[["rails","3 + 3 rails"],["filmstrip","Filmstrip"],["wall","Camera wall"],["hidden","Hidden"]].map(([value,label]) => <button className={control.state.camera_layout === value ? "active" : ""} key={value} onClick={() => run(() => control.updateState({ camera_layout: value, camera_enabled: value !== "hidden" }), `${label} selected`)}>{label}</button>)}</div>
+          <div className="button-grid">{[["split","Live show"],["board","Big board"],["cameras","Camera wall"],["ready","Countdown"],["holding","Halftime / Hold"]].map(([value,label]) => <button className={control.state.scene === value ? "active" : ""} key={value} onClick={() => run(() => control.updateState({ scene:value, camera_layout:value==="cameras"?"wall":control.state.camera_layout }), `${label} live`)}>{label}</button>)}</div>
+          <h3>Live-show camera placement</h3>
+          <div className="button-grid">{[["rails","Side rails"],["filmstrip","Bottom reactions"],["hidden","No cameras"]].map(([value,label]) => <button className={control.state.camera_layout === value ? "active" : ""} key={value} onClick={() => run(() => control.updateState({ camera_layout:value, camera_enabled:value!=="hidden", scene:"split" }), `${label} selected`)}>{label}</button>)}</div>
         </article>
+        <article className="control-card clock-control"><h2><Clock3 /> Local pick clock</h2><p>This show clock stays at 90 seconds even if Sleeper is set longer. Pause it for delays, breaks, or commissioner rulings.</p><div className="mock-state"><i className={!control.state.clock_paused ? "on" : ""}/><b>{control.state.clock_paused ? "CLOCK PAUSED" : "CLOCK RUNNING"}</b><strong>{control.state.clock_override_seconds ?? 90} SEC</strong></div><div className="button-grid"><button onClick={() => run(() => control.updateState({clock_paused:!control.state.clock_paused}), control.state.clock_paused?"Clock resumed":"Clock paused")}>{control.state.clock_paused?<Play/>:<Pause/>}{control.state.clock_paused?"Resume":"Pause"}</button><button onClick={() => run(() => control.updateState({clock_override_seconds:90,clock_paused:false}),"Clock reset to 90 seconds")}>Reset 90</button><button onClick={() => run(() => control.updateState({clock_override_seconds:300,clock_paused:true}),"Five-minute halftime clock ready")}>5-min break</button></div></article>
         <article className="control-card mock-control">
           <h2><FastForward /> Mock draft</h2>
           <div className="mock-state"><i className={control.state.mock_mode ? "on" : ""} /><b>{control.state.mock_mode ? "MOCK MODE LIVE" : "OFFICIAL SLEEPER MODE"}</b><strong>{control.state.mock_picks?.length || 0} PICKS</strong></div>
@@ -165,20 +172,19 @@ export default function ControlRoom({ control, bootstrap, live }) {
         </article>
         <article className="control-card show-control">
           <h2><BellRing /> Show overlays</h2>
-          <p>Take over every live screen with a broadcast event. Pick reveals still fire automatically from the Sleeper feed.</p>
-          <div className="button-grid">
-            <button onClick={() => run(() => control.updateState({ announcement:{ type:"trade", kicker:"TRADE ALERT", title:"A deal is on the board", detail:"Draft positions have changed hands.", nonce:Date.now() } }), "Trade alert live")}><ArrowLeftRight />Trade alert</button>
-            <button onClick={() => run(() => control.updateState({ announcement:{ type:"round", kicker:"ROUND COMPLETE", title:"Round complete", detail:"Reset, reload, and get ready for the next run.", nonce:Date.now() } }), "Round overlay live")}><Trophy />Round break</button>
-            <button onClick={() => run(() => control.updateState({ announcement:{ type:"announcement", kicker:"COMMISSIONER UPDATE", title:"Draft room announcement", detail:"Stand by for an update from the commissioner.", nonce:Date.now() } }), "Announcement live")}><BellRing />Message</button>
-            <button onClick={() => run(() => control.updateState({ announcement:null }), "Overlay cleared")}><X />Clear overlay</button>
-          </div>
+          <p>Customize exactly what viewers see, how long it stays up, and which sound cue fires. Pick reveals still happen automatically.</p>
+          <div className="overlay-form"><label>Type<select value={overlay.type} onChange={(event)=>setOverlay({...overlay,type:event.target.value})}><option value="announcement">Announcement</option><option value="trade">Trade alert</option><option value="round">Round break</option><option value="celebration">Celebration</option><option value="alert">Urgent alert</option></select></label><label>Kicker<input maxLength="32" value={overlay.kicker} onChange={(event)=>setOverlay({...overlay,kicker:event.target.value})}/></label><label className="wide">Headline<input maxLength="84" value={overlay.title} onChange={(event)=>setOverlay({...overlay,title:event.target.value})}/></label><label className="wide">Details<textarea maxLength="180" value={overlay.detail} onChange={(event)=>setOverlay({...overlay,detail:event.target.value})}/></label><label>Display time<input type="number" min="2" max="30" value={overlay.duration} onChange={(event)=>setOverlay({...overlay,duration:event.target.value})}/></label><label>Sound<select value={overlay.sound} onChange={(event)=>setOverlay({...overlay,sound:event.target.value})}><option value="alert">Alert stinger</option><option value="fanfare">Fanfare</option><option value="none">No sound</option></select></label></div>
+          <div className="button-grid"><button onClick={() => { setOverlay({type:"trade",kicker:"TRADE ALERT",title:"A deal is on the board",detail:"Draft positions have changed hands.",duration:8,sound:"alert"}); }}><ArrowLeftRight />Trade preset</button><button onClick={() => { setOverlay({type:"round",kicker:"ROUND COMPLETE",title:"Round complete",detail:"Reset, reload, and get ready for the next run.",duration:9,sound:"fanfare"}); }}><Trophy />Round preset</button><button className="active" onClick={() => run(fireOverlay,"Custom overlay live")}><Play />Take live</button><button onClick={() => run(() => control.updateState({announcement:null}),"Overlay cleared")}><X />Clear</button></div>
         </article>
+        <article className="control-card ticker-control"><h2>Live tickers</h2><p>Add headlines, jokes, updates, or stats. Sleeper picks are added to the lower Draft Feed automatically.</p><div className="overlay-form"><label>Lane<select value={ticker.lane} onChange={(event)=>setTicker({...ticker,lane:event.target.value})}><option value="top">Top news</option><option value="bottom">Bottom feed</option></select></label><label>Type<select value={ticker.kind} onChange={(event)=>setTicker({...ticker,kind:event.target.value})}><option value="news">News</option><option value="status">Status</option><option value="alert">Alert</option><option value="stat">Stat</option></select></label><label className="wide">Text<input maxLength="280" value={ticker.text} onChange={(event)=>setTicker({...ticker,text:event.target.value})}/></label><label>Accent<input type="color" value={ticker.accent} onChange={(event)=>setTicker({...ticker,accent:event.target.value})}/></label></div><button disabled={!ticker.text.trim()} onClick={() => run(async()=>{const result=await supabase.from("ticker_items").insert({...ticker,text:ticker.text.trim(),league_id:LEAGUE_ID,active:true}).select();if(result.error)throw result.error;setTicker({...ticker,text:""});await control.reload();},"Ticker item added")}><Plus/>Add ticker item</button><div className="ticker-admin-list">{control.tickers.map((item)=><div key={item.id}><i style={{background:item.accent}}/><span><b>{item.lane} · {item.kind}</b>{item.text}</span><button onClick={()=>run(async()=>{const result=await supabase.from("ticker_items").delete().eq("id",item.id);if(result.error)throw result.error;await control.reload();},"Ticker removed")}><Trash2/></button></div>)}</div></article>
         <article className="control-card team-password-card">
-          <h2>Team access passwords</h2>
-          <p>Set the initial password for each owner. Passwords are bcrypt-hashed; the plaintext value is never stored.</p>
-          <label>Team<select value={teamId} onChange={(event) => setTeamId(event.target.value)}>{bootstrap.members.map((member) => <option value={member.rosterId} key={member.rosterId}>Team {member.rosterId} · {member.teamName}</option>)}</select></label>
+          <h2>Team access & identity</h2>
+          <p>Team numbers mirror Sleeper roster slots and cannot drift. Existing passwords cannot be displayed because only secure hashes are stored, but you can reset or remove them.</p>
+          <label>Team<select value={teamId} onChange={(event) => chooseTeam(event.target.value)}>{bootstrap.members.map((member) => <option value={member.rosterId} key={member.rosterId}>Team {member.rosterId} · {member.teamName}</option>)}</select></label>
+          <label>Display name<input maxLength="36" value={teamName} onChange={(event)=>setTeamName(event.target.value)}/></label><div className="team-access-meta"><span>TEAM NUMBER <b>{selectedMember?.rosterId}</b></span><span>SLEEPER OWNER <b>{selectedMember?.displayName}</b></span></div><button onClick={() => run(async()=>{const result=await supabase.from("team_profiles").update({team_name:teamName,updated_at:new Date().toISOString()}).eq("league_id",LEAGUE_ID).eq("roster_id",Number(teamId));if(result.error)throw result.error;await control.reload();},"Team name updated")}><Save/>Save team name</button>
           <label>New password<input type="password" minLength="6" maxLength="72" value={teamPassword} onChange={(event) => setTeamPassword(event.target.value)} /></label>
           <button disabled={teamPassword.length < 6} onClick={() => run(async () => { const result = await supabase.rpc("set_team_password", { p_league_id: LEAGUE_ID, p_roster_id: Number(teamId), p_password: teamPassword }); if (result.error) throw result.error; setTeamPassword(""); }, "Team password saved")}><Save />Save team password</button>
+          <button className="danger-lite" onClick={() => run(async()=>{const result=await supabase.rpc("clear_team_password",{p_league_id:LEAGUE_ID,p_roster_id:Number(teamId)});if(result.error)throw result.error;},"Team password removed")}><Trash2/>Remove team password</button>
         </article>
       </div>
     </main>

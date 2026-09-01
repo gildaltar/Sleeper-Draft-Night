@@ -1,6 +1,8 @@
 import { MicOff, VideoOff } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { avatarUrl } from "../lib/draft";
+import stadium from "../assets/draft-stadium.png";
+import { avatarUrl, parsePanelProfile } from "../lib/draft";
+import HelmetIdentity from "./HelmetIdentity";
 
 export default function CameraCard({ member, profile, participant, attach, active, compact = false, simulated = false, spotlight = false }) {
   const mount = useRef(null);
@@ -13,13 +15,12 @@ export default function CameraCard({ member, profile, participant, attach, activ
   const secondary = profile?.accent_2 || "#b7ff3c";
   const name = profile?.team_name || member.teamName;
   const avatar = avatarUrl(member.avatar);
-  const [panelStyle = "broadcast", intensity = "72", favorite = "custom", nameplate = "classic", encodedLogo = ""] = (profile?.panel_style || "broadcast").split("|");
-  const customLogo = encodedLogo ? decodeURIComponent(encodedLogo) : "";
-  const logo = customLogo || (favorite !== "custom" ? `https://a.espncdn.com/i/teamlogos/nfl/500/${favorite}.png` : "");
+  const panel = parsePanelProfile(profile?.panel_style);
+  const cameraBackground = panel.backgroundMode === "custom" && panel.background ? panel.background : panel.backgroundMode === "stadium" ? stadium : "";
   return (
     <article
-      className={`camera-card style-${panelStyle} nameplate-${nameplate} ${active ? "active" : ""} ${compact ? "compact" : ""} ${simulated ? "simulated" : ""} ${spotlight ? "spotlight-card" : ""}`}
-      style={{ "--team": primary, "--team-2": secondary, "--intensity": Number(intensity) / 100, "--frame-pct": `${intensity}%`, "--frame-glow": `${Number(intensity) * .26}px` }}
+      className={`camera-card style-${panel.style} nameplate-${panel.nameplate} ${active ? "active" : ""} ${compact ? "compact" : ""} ${simulated ? "simulated" : ""} ${spotlight ? "spotlight-card" : ""}`}
+      style={{ "--team": primary, "--team-2": secondary, "--intensity": Number(panel.intensity) / 100, "--frame-pct": `${panel.intensity}%`, "--frame-glow": `${Number(panel.intensity) * .26}px`, "--border-width":`${panel.borderWidth}px`, "--camera-bg":cameraBackground?`url(${cameraBackground})`:"none" }}
     >
       <div className="camera-frame" ref={mount}>
         {(simulated || !participant?.bVideoOn) && (
@@ -36,7 +37,7 @@ export default function CameraCard({ member, profile, participant, attach, activ
         </div>}
       </div>
       <footer>
-        {logo && <img className="panel-logo" src={logo} alt="" />}
+        <HelmetIdentity profile={profile} member={member} compact />
         <div>
           <h3>{name}</h3>
           <span>{member.displayName} · Draft slot {member.rosterId}</span>

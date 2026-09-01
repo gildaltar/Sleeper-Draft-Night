@@ -19,10 +19,10 @@ export default function Board({ players, picks }) {
       </div>
       <div className="player-table" role="table">
         <div className="player-row table-head" role="row"><span>Rank</span><span>Player</span><span>Pos</span><span>Team</span><span>Status</span></div>
-        {filtered.slice(0, 180).map((player) => (
+        {filtered.slice(0, 96).map((player) => (
           <div className={`player-row ${picked.has(player.playerId) ? "drafted" : ""}`} role="row" key={player.playerId}>
             <strong>{player.rank}</strong>
-            <span className="player-name"><img src={playerImage(player.playerId)} alt="" /><b>{player.name}</b><small>{player.college || "NFL"}</small></span>
+            <span className="player-name"><img src={playerImage(player.playerId, player.position)} alt="" onError={(event) => { event.currentTarget.style.visibility = "hidden"; }} /><b>{player.name}</b><small>{player.college || "NFL"}</small></span>
             <b className={`pos pos-${player.position}`}>{player.position}</b>
             <span>{player.team || "FA"}</span>
             <span>{picked.has(player.playerId) ? "Drafted" : player.injuryStatus || "Available"}</span>

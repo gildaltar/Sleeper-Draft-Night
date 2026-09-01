@@ -88,7 +88,7 @@ export function useZoomDisplay({ members, spectator = false, enabled = true }) {
       clientRef.current = null;
       Promise.resolve(client?.leave?.(false))
         .catch(() => undefined)
-        .finally(() => Promise.resolve(destroy?.()).catch(() => undefined));
+        .finally(() => client ? Promise.resolve(destroy?.(client)).catch(() => undefined) : undefined);
     };
   }, [connect]);
 
@@ -135,5 +135,5 @@ export async function startOwnerCamera({ member, mount, password, onStatus }) {
     mount.replaceChildren(video);
   }
   onStatus?.("joined", "");
-  return { client, destroy: ZoomVideo.destroyClient, stream };
+  return { client, destroy: () => ZoomVideo.destroyClient(client), stream };
 }

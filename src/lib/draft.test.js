@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { memberForPick, nextMockPick, rosterNeeds, roundAndPick } from "./draft";
+import { memberForPick, nextMockPick, parsePanelProfile, playerImage, rosterNeeds, roundAndPick } from "./draft";
 
 const members = Array.from({ length: 6 }, (_, index) => ({ userId: `u${index + 1}`, rosterId: index + 1, teamName: `Team ${index + 1}` }));
 const draft = { settings: { teams: 6, rounds: 22 }, draftOrder: Object.fromEntries(members.map((member) => [member.userId, member.rosterId])) };
@@ -33,5 +33,10 @@ describe("draft helpers", () => {
       { rosterId: 1, player: { position: "TE" } },
     ];
     expect(rosterNeeds(league, picks, 1)).toEqual([["QB", 1], ["Q/W/R/T", 1]]);
+  });
+  it("uses a real team mark for defenses", () => expect(playerImage("WAS", "DEF")).toContain("/wsh.png"));
+  it("preserves extended Team Studio settings", () => {
+    const profile = parsePanelProfile("neon|84|det|split||6|stadium|");
+    expect(profile).toMatchObject({ style:"neon", intensity:"84", favorite:"det", nameplate:"split", borderWidth:"6", backgroundMode:"stadium" });
   });
 });

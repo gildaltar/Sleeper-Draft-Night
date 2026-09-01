@@ -4,8 +4,39 @@ export const avatarUrl = (avatar) => {
   return `https://sleepercdn.com/avatars/thumbs/${avatar}`;
 };
 
-export const playerImage = (playerId) =>
-  `https://sleepercdn.com/content/nfl/players/thumb/${playerId}.jpg`;
+const DEFENSE_LOGO_KEYS = {
+  ARI:"ari", ATL:"atl", BAL:"bal", BUF:"buf", CAR:"car", CHI:"chi", CIN:"cin", CLE:"cle",
+  DAL:"dal", DEN:"den", DET:"det", GB:"gb", HOU:"hou", IND:"ind", JAX:"jax", KC:"kc",
+  LAC:"lac", LAR:"lar", LV:"lv", MIA:"mia", MIN:"min", NE:"ne", NO:"no", NYG:"nyg",
+  NYJ:"nyj", PHI:"phi", PIT:"pit", SEA:"sea", SF:"sf", TB:"tb", TEN:"ten", WAS:"wsh",
+};
+
+export const playerImage = (playerId, position) => {
+  const key = String(playerId || "").toUpperCase();
+  if (position === "DEF" || DEFENSE_LOGO_KEYS[key]) {
+    return `https://a.espncdn.com/i/teamlogos/nfl/500/${DEFENSE_LOGO_KEYS[key] || key.toLowerCase()}.png`;
+  }
+  return `https://sleepercdn.com/content/nfl/players/thumb/${playerId}.jpg`;
+};
+
+export function parsePanelProfile(value = "broadcast") {
+  const [style = "broadcast", intensity = "72", favorite = "custom", nameplate = "classic", encodedLogo = "", borderWidth = "2", backgroundMode = "studio", encodedBackground = ""] = String(value).split("|");
+  return {
+    style,
+    intensity,
+    favorite,
+    nameplate,
+    logo: encodedLogo ? decodeURIComponent(encodedLogo) : "",
+    borderWidth,
+    backgroundMode,
+    background: encodedBackground ? decodeURIComponent(encodedBackground) : "",
+  };
+}
+
+export const profileLogo = (profile) => {
+  const parsed = parsePanelProfile(profile?.panel_style);
+  return parsed.logo || (parsed.favorite !== "custom" ? `https://a.espncdn.com/i/teamlogos/nfl/500/${parsed.favorite}.png` : "");
+};
 
 export function orderedMembers(draft, members) {
   return [...members].sort(
