@@ -1,5 +1,5 @@
 import { ArrowLeftRight, BellRing, PartyPopper, ShieldAlert, Sparkles, Trophy } from "lucide-react";
-import stadium from "../assets/draft-stadium.png";
+import { stadium } from "../lib/showAssets";
 import { playerImage } from "../lib/draft";
 import HelmetIdentity from "./HelmetIdentity";
 

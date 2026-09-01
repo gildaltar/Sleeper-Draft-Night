@@ -1,6 +1,6 @@
 import { Camera, Check, Eye, EyeOff, ImagePlus, ListPlus, Lock, LogOut, Mic, Save, Signal, Sparkles, StopCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import stadium from "../assets/draft-stadium.png";
+import { stadium } from "../lib/showAssets";
 import { LEAGUE_ID, TEAM_ACCENTS } from "../lib/config";
 import { memberForPick, parsePanelProfile, rosterNeeds } from "../lib/draft";
 import { supabase } from "../lib/supabase";

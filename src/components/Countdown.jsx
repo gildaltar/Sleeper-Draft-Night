@@ -1,6 +1,6 @@
 import { CalendarClock, Radio, Sparkles, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import stadium from "../assets/draft-stadium.png";
+import { stadium } from "../lib/showAssets";
 
 const units = (milliseconds) => {
   const total = Math.max(0, Math.floor(milliseconds / 1000));

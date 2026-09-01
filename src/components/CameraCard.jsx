@@ -1,6 +1,6 @@
 import { MicOff, VideoOff } from "lucide-react";
 import { useEffect, useRef } from "react";
-import stadium from "../assets/draft-stadium.png";
+import { stadium } from "../lib/showAssets";
 import { avatarUrl, parsePanelProfile } from "../lib/draft";
 import HelmetIdentity from "./HelmetIdentity";
 

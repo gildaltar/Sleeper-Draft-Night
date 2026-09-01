@@ -1,4 +1,4 @@
-import helmetFrame from "../assets/helmet-frame-v2.png";
+import { helmetFrame } from "../lib/showAssets";
 import { profileLogo } from "../lib/draft";
 
 export default function HelmetIdentity({ profile, member, compact = false }) {
