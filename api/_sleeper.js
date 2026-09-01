@@ -19,7 +19,7 @@ export function validLeague(value) {
 export function normalizeDraft(raw) {
   return {
     draftId: raw.draft_id,
-    status: raw.status,
+    status: raw.status === "drafting" ? "in_progress" : raw.status,
     type: raw.type,
     startTime: raw.start_time,
     lastPicked: raw.last_picked,

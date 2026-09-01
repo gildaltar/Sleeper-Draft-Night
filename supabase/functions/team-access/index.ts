@@ -131,7 +131,7 @@ Deno.serve(async (req: Request) => {
       const nflTeam = String(body.nflTeam || "FA").toUpperCase().slice(0,4);
       if (!/^\d{10,24}$/.test(draftId) || !Number.isInteger(pickNo) || !playerId || !playerName || !["QB","RB","WR","TE","K","DEF"].includes(position)) return json({ok:false,error:"Invalid pick request"},400);
       const turn = await currentSleeperTurn(leagueId,draftId);
-      if (turn.status !== "in_progress") return json({ok:false,error:"Sleeper has not started the draft"},409);
+      if (!["drafting","in_progress"].includes(turn.status)) return json({ok:false,error:"Sleeper has not started the draft"},409);
       if (turn.pickNo !== pickNo || turn.rosterId !== rosterId) return json({ok:false,error:"This team is not currently on the clock"},409);
       if (turn.drafted.has(playerId)) return json({ok:false,error:"That player is already drafted"},409);
       const {data:existing,error:existingError} = await db.from("pick_requests").select("*").eq("league_id",leagueId).eq("draft_id",draftId).eq("pick_no",pickNo).in("status",activeStatuses).maybeSingle();

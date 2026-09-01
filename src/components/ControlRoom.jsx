@@ -28,7 +28,7 @@ export default function ControlRoom({control,bootstrap,live}) {
   const [teamId,setTeamId] = useState("1");const [teamPassword,setTeamPassword] = useState("");const [teamName,setTeamName] = useState(bootstrap.members[0]?.teamName || "");
   const [overlay,setOverlay] = useState({type:"announcement",kicker:"COMMISSIONER UPDATE",title:"Draft room announcement",detail:"Stand by for an update from the commissioner.",duration:7,sound:"announcement"});
   const [ticker,setTicker] = useState({lane:"bottom",kind:"news",text:"",accent:"#b8ff38"});
-  const [services,setServices] = useState({video:"CHECKING",music:"CHECKING"});
+  const [services,setServices] = useState({video:"CHECKING"});
 
   const loadMemberships = useCallback(async () => {
     const result = await supabase.from("team_owner_memberships").select("league_id,roster_id,user_id,owner_email,claimed_at").eq("league_id",LEAGUE_ID).order("roster_id");
@@ -59,12 +59,10 @@ export default function ControlRoom({control,bootstrap,live}) {
     let active = true;
     Promise.allSettled([
       fetch("/api/livekit-token",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({role:"viewer",leagueId:LEAGUE_ID})}).then((response) => response.json().then((data) => ({ok:response.ok,data}))),
-      fetch("/api/apple-music-token").then((response) => response.json().then((data) => ({ok:response.ok,data}))),
-    ]).then(([video,music]) => {
+    ]).then(([video]) => {
       if (!active) return;
       setServices({
         video:video.status === "fulfilled" && video.value.ok && video.value.data.configured ? "READY" : "SETUP NEEDED",
-        music:music.status === "fulfilled" && music.value.ok && music.value.data.configured ? "READY" : "SETUP NEEDED",
       });
     });
     return () => {active = false;};
@@ -97,7 +95,7 @@ export default function ControlRoom({control,bootstrap,live}) {
         <span><i className={status === "IN PROGRESS" ? "on" : ""}/><small>SLEEPER</small><b>{status}</b></span>
         <span><Clock3 /><small>PICK TIMER</small><b>{Math.floor(pickTimer / 60)}:{String(pickTimer % 60).padStart(2,"0")}</b></span>
         <span><Camera /><small>CAMERA RELAY</small><b>LIVEKIT {services.video}</b></span>
-        <span><Volume2 /><small>APPLE MUSIC</small><b>{services.music}</b></span>
+        <span><Volume2 /><small>PRE-DRAFT MUSIC</small><b>APPLE EMBED READY</b></span>
         <span><Users /><small>OWNERS CLAIMED</small><b>{memberships.length} / {bootstrap.members.length}</b></span>
         <span><Radio /><small>PUBLIC MODE</small><b>{control.state.mock_mode ? "MOCK WARNING" : "SLEEPER LIVE"}</b></span>
       </section>
@@ -116,7 +114,7 @@ export default function ControlRoom({control,bootstrap,live}) {
 
         {activeTab === "draft" && <><PickOperator bootstrap={bootstrap} live={live} enabled={authorized} /><article className="control-card control-card-wide"><h2><Clock3 />Official draft state</h2><div className="operator-truth-strip"><span>STATUS<b>{status}</b></span><span>PICKS<b>{live?.picks?.length || 0}</b></span><span>TIMER<b>{pickTimer}s</b></span><span>MOCK MODE<b>{control.state.mock_mode ? "ON" : "OFF"}</b></span><a href={`https://sleeper.app/draft/nfl/${live?.draft?.draftId || bootstrap.draft.draftId}`} target="sleeper-draft-room" rel="noreferrer"><ExternalLink />Open Sleeper operator room</a></div></article></>}
 
-        {activeTab === "audio" && <article className="control-card control-card-wide control-audio-card"><h2><Volume2 />Sound mix & Apple Music</h2><p>Start audio once on the production device. Each cue has its own level; music ducks automatically for show sounds and then resumes.</p><DraftAudio picks={live?.picks || []} draftStatus={live?.draft?.status || bootstrap.draft.status} announcement={control.state.announcement} panel /></article>}
+        {activeTab === "audio" && <article className="control-card control-card-wide control-audio-card"><h2><Volume2 />Pre-draft music & sound mix</h2><p>Start the Steelers song from its Apple player before the draft, then arm show sound for automatic cues. Cue levels remain independently adjustable.</p><DraftAudio picks={live?.picks || []} draftStatus={live?.draft?.status || bootstrap.draft.status} announcement={control.state.announcement} panel /></article>}
 
         {activeTab === "overlays" && <>
           <article className="control-card control-card-wide show-control"><h2><BellRing />Show overlays</h2><p>Build the exact message viewers see and select its sound.</p><div className="overlay-form"><label>Type<select value={overlay.type} onChange={(event) => setOverlay({...overlay,type:event.target.value})}><option value="announcement">Announcement</option><option value="trade">Trade alert</option><option value="round">Round break</option><option value="celebration">Celebration</option><option value="alert">Urgent alert</option></select></label><label>Kicker<input maxLength="32" value={overlay.kicker} onChange={(event) => setOverlay({...overlay,kicker:event.target.value})}/></label><label className="wide">Headline<input maxLength="84" value={overlay.title} onChange={(event) => setOverlay({...overlay,title:event.target.value})}/></label><label className="wide">Details<textarea maxLength="180" value={overlay.detail} onChange={(event) => setOverlay({...overlay,detail:event.target.value})}/></label><label>Display time<input type="number" min="2" max="30" value={overlay.duration} onChange={(event) => setOverlay({...overlay,duration:event.target.value})}/></label><label>Sound<select value={overlay.sound} onChange={(event) => setOverlay({...overlay,sound:event.target.value})}><option value="announcement">Announcement</option><option value="alert">Alert</option><option value="fanfare">Fanfare</option><option value="none">None</option></select></label></div><div className="button-grid"><button onClick={() => setOverlay({type:"trade",kicker:"TRADE ALERT",title:"A deal is on the board",detail:"Draft positions have changed hands.",duration:8,sound:"alert"})}><ArrowLeftRight />Trade preset</button><button onClick={() => setOverlay({type:"round",kicker:"ROUND COMPLETE",title:"Round complete",detail:"Reset, reload, and get ready for the next run.",duration:9,sound:"fanfare"})}><Trophy />Round preset</button><button className="active" onClick={() => run(fireOverlay,"Overlay live")}><Play />Take live</button><button onClick={() => run(() => control.updateState({announcement:null}),"Overlay cleared")}><X />Clear</button></div></article>
