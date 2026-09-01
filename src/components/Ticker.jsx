@@ -1,11 +1,13 @@
 import { Activity, Radio } from "lucide-react";
 
-export default function Ticker({ lane, items, label, speed = 34 }) {
+export default function Ticker({ lane, items, label, speed = 34, teams = 6, pickTimerSeconds = 300 }) {
+  const timer = Math.max(1, Number(pickTimerSeconds || 300));
+  const timerLabel = timer % 60 === 0 ? `${timer / 60}-MINUTE` : `${timer}-SECOND`;
   const defaults =
     lane === "top"
       ? [
           { id: "status", kind: "status", text: "SLEEPER LIVE · DRAFT NIGHT", accent: "#b7ff3c" },
-          { id: "format", kind: "news", text: "6 TEAMS · 22 ROUNDS · 90-SECOND CLOCK · SUPERFLEX", accent: "#1f9bfe" },
+          { id: "format", kind: "news", text: `${teams} TEAMS · 22 ROUNDS · ${timerLabel} CLOCK · SUPERFLEX`, accent: "#1f9bfe" },
         ]
       : [
           { id: "welcome", kind: "draft", text: "WELCOME TO STROUDY DRAFT NIGHT", accent: "#b7ff3c" },

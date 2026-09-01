@@ -58,7 +58,7 @@ function Shell({ children, data, control, active, team }) {
   const fullscreen = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
   return (
     <div className="app-shell">
-      {control.state.top_ticker_enabled !== false ? <Ticker lane="top" items={tickerItems} speed={control.state.ticker_speed} /> : <div className="ticker-spacer" />}
+      {control.state.top_ticker_enabled !== false ? <Ticker lane="top" items={tickerItems} speed={control.state.ticker_speed} teams={draft.settings.teams} pickTimerSeconds={draft.settings.pickTimer} /> : <div className="ticker-spacer" />}
       <header className="app-header">
         <a className="brand" href="/"><i>SDN</i><div><b>STROUDY DRAFT NIGHT</b><span>LIVE WAR ROOM</span></div></a>
         <nav>{nav.map(([href, label]) => <a className={active === href.split("?")[0] ? "active" : ""} href={href} key={href}>{label}</a>)}</nav>

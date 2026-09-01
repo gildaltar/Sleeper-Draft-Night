@@ -10,14 +10,14 @@ import HelmetIdentity from "./HelmetIdentity";
 function PickTimer({ draft, picks }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const interval = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(interval); }, []);
-  const total = Math.max(1, Number(draft.settings.pickTimer || 90));
+  const total = Math.max(1, Number(draft.settings.pickTimer || 300));
   const pickedAt = picks.at(-1)?.pickedAt || draft.lastPicked;
   const running = draft.status === "in_progress" || picks.at(-1)?.pickedAt;
   const remaining = running && pickedAt ? Math.max(0, total - Math.floor((now - Number(pickedAt)) / 1000)) : total;
   return <><strong>{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, "0")}</strong><i><b style={{ width: `${Math.max(0, (remaining / total) * 100)}%` }} /></i></>;
 }
 
-function CenterStage({ league, draft, members, players, picks, currentMember, profiles, spotlight, controlState }) {
+function CenterStage({ league, draft, members, players, picks, currentMember, profiles, spotlight, draftStarted }) {
   const pickNo = picks.length + 1;
   const { round } = roundAndPick(pickNo, draft.settings.teams);
   const needs = rosterNeeds(league, picks, currentMember?.rosterId).slice(0, 8);
@@ -26,7 +26,6 @@ function CenterStage({ league, draft, members, players, picks, currentMember, pr
   const lastPick = picks.at(-1);
   const nextMember = memberForPick(pickNo + 1, draft, members);
   const profile = profiles.find((item) => Number(item.roster_id) === Number(currentMember?.rosterId));
-  const draftStarted = draft.status === "in_progress";
   const draftSlot = draftSlotForMember(draft, currentMember);
   return (
     <section className={`center-stage ${spotlight ? "has-spotlight" : ""}`} style={{ "--team": profile?.accent || "#1f9bfe", "--team-2": profile?.accent_2 || "#b7ff3c" }}>
@@ -46,6 +45,7 @@ export default function Broadcast({ data, control, spectator = false, testMode =
   const { league, members, players } = data.bootstrap;
   const draft = data.live?.draft || data.bootstrap.draft;
   const picks = testMode ? control.state.mock_picks || [] : data.live?.picks || [];
+  const draftStarted = draft.status === "in_progress" || (testMode && control.state.mock_mode);
   const pickNo = picks.length + 1;
   const currentMember = memberForPick(pickNo, draft, members) || members[0];
   const layout = control.state.camera_layout || "rails";
@@ -70,7 +70,7 @@ export default function Broadcast({ data, control, spectator = false, testMode =
     return () => { window.clearTimeout(reveal); window.clearTimeout(dismiss); };
   }, [members, picks.length]);
 
-  const camera = (member, spotlight = false) => <CameraCard key={member.userId} member={member} draft={draft} profile={profileByRoster.get(member.rosterId)} participant={zoom.participantByRoster.get(member.rosterId)} attach={zoom.attach} active={draft.status === "in_progress" && member.rosterId === currentMember.rosterId} simulated={testMode} spotlight={spotlight} />;
+  const camera = (member, spotlight = false) => <CameraCard key={member.userId} member={member} draft={draft} profile={profileByRoster.get(member.rosterId)} participant={zoom.participantByRoster.get(member.rosterId)} attach={zoom.attach} active={draftStarted && member.rosterId === currentMember.rosterId} simulated={testMode} spotlight={spotlight} />;
   const reactionMembers = members.filter((member) => Number(member.rosterId) !== Number(currentMember.rosterId));
   const camerasVisible = control.state.scene !== "draft" && control.state.camera_enabled !== false && layout !== "hidden";
   const announcement = control.state.announcement && typeof control.state.announcement === "object" ? control.state.announcement : null;
@@ -82,7 +82,7 @@ export default function Broadcast({ data, control, spectator = false, testMode =
   if (control.state.scene === "board") return null;
   if (control.state.scene === "cameras" || (control.state.scene === "split" && layout === "wall")) return <main className="camera-wall">{members.map((member) => camera(member))}<EventOverlay event={event} profile={eventProfile} /></main>;
 
-  const center = <CenterStage league={league} draft={draft} members={members} players={players} picks={picks} currentMember={currentMember} profiles={control.profiles} spotlight={camerasVisible ? camera(currentMember, true) : null} controlState={control.state} />;
+  const center = <CenterStage league={league} draft={draft} members={members} players={players} picks={picks} currentMember={currentMember} profiles={control.profiles} spotlight={camerasVisible ? camera(currentMember, true) : null} draftStarted={draftStarted} />;
   if (camerasVisible && layout === "filmstrip") return <main className="broadcast-filmstrip">{center}<aside className="camera-filmstrip">{reactionMembers.map((member) => camera(member))}</aside><EventOverlay event={event} profile={eventProfile} />{!testMode && zoom.message && <div className="camera-notice"><AlertTriangle size={15} />{zoom.message}</div>}</main>;
   return (
     <main className={`broadcast-grid ${camerasVisible ? "with-cameras spotlight-layout" : "draft-only"}`}>

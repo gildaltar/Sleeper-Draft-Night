@@ -8,7 +8,7 @@ function SleeperPickClock({ draft, picks }) {
   const [now, setNow] = useState(Date.now());
   const startedAt = picks.at(-1)?.pickedAt || draft.lastPicked || now;
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
-  const base = Math.max(1, Number(draft.settings.pickTimer || 90));
+  const base = Math.max(1, Number(draft.settings.pickTimer || 300));
   const running = draft.status === "in_progress" || picks.length > 0;
   const remaining = !running ? base : Math.max(0, base - Math.floor((now - Number(startedAt)) / 1000));
   return <strong>{Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2,"0")}</strong>;
