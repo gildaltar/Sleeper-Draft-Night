@@ -1,114 +1,251 @@
-import { ExternalLink, Music2, Plus, SlidersHorizontal, Volume2, VolumeX, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ListMusic, Plus, SlidersHorizontal, Volume2, VolumeX, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import SpotifyQueuePlayer from "./SpotifyQueuePlayer";
+import { announcementCue, isDraftComplete, normalizeSpotifyTrackUrl } from "../lib/audio";
 import { LEAGUE_ID } from "../lib/config";
 import { supabase } from "../lib/supabase";
 
-const AUDIO_KEY = "sdn-audio-enabled-v3";
-const MIX_KEY = "sdn-audio-mix-v3";
+const MIX_KEY = "sdn-audio-mix-v4";
+const CUE_LENGTH = {
+  "pick-in": 1050,
+  "pick-reveal": 2200,
+  "draft-start": 3100,
+  "draft-end": 3600,
+  announcement: 1250,
+  alert: 1200,
+  fanfare: 2200,
+};
+const CUE_LABEL = {
+  "pick-in": "Pick is in",
+  "pick-reveal": "Pick reveal",
+  "draft-start": "Draft start",
+  "draft-end": "Draft end",
+  announcement: "Announcement",
+  alert: "Alert",
+  fanfare: "Fanfare",
+};
 
-function tone(context, destination, frequency, start, duration, volume = 0.04, type = "sine") {
+function tone(context, destination, frequency, start, duration, volume = 0.05, type = "sine", endFrequency = frequency) {
   if (!context || !destination) return;
   const oscillator = context.createOscillator();
   const gain = context.createGain();
   oscillator.type = type;
   oscillator.frequency.setValueAtTime(frequency, start);
+  if (endFrequency !== frequency) oscillator.frequency.exponentialRampToValueAtTime(endFrequency, start + duration);
   gain.gain.setValueAtTime(0.0001, start);
-  gain.gain.exponentialRampToValueAtTime(volume, start + 0.025);
+  gain.gain.exponentialRampToValueAtTime(volume, start + 0.02);
   gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
   oscillator.connect(gain).connect(destination);
   oscillator.start(start);
-  oscillator.stop(start + duration + 0.03);
+  oscillator.stop(start + duration + 0.04);
 }
 
-export default function DraftAudio({ picks, draftStatus, cue }) {
-  const [enabled, setEnabled] = useState(() => window.localStorage.getItem(AUDIO_KEY) === "true");
+function noiseBoom(context, destination, start, volume = 0.16) {
+  const length = Math.floor(context.sampleRate * 0.55);
+  const buffer = context.createBuffer(1, length, context.sampleRate);
+  const samples = buffer.getChannelData(0);
+  for (let index = 0; index < length; index += 1) samples[index] = (Math.random() * 2 - 1) * (1 - index / length);
+  const source = context.createBufferSource();
+  const filter = context.createBiquadFilter();
+  const gain = context.createGain();
+  source.buffer = buffer;
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(520, start);
+  filter.frequency.exponentialRampToValueAtTime(90, start + 0.5);
+  gain.gain.setValueAtTime(volume, start);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.52);
+  source.connect(filter).connect(gain).connect(destination);
+  source.start(start);
+}
+
+function playCue(context, destination, cue) {
+  const now = context.currentTime + 0.035;
+  if (cue === "pick-in") {
+    noiseBoom(context, destination, now, 0.15);
+    [523.25, 659.25, 783.99].forEach((frequency, index) => tone(context, destination, frequency, now + 0.18 + index * 0.1, 0.42, 0.075, "triangle"));
+    tone(context, destination, 1046.5, now + 0.48, 0.55, 0.07, "sine");
+    return;
+  }
+  if (cue === "pick-reveal" || cue === "fanfare") {
+    [196, 246.94, 293.66, 392].forEach((frequency, index) => tone(context, destination, frequency, now + index * 0.15, 0.7, 0.055, "sawtooth"));
+    [392, 493.88, 587.33, 783.99].forEach((frequency, index) => tone(context, destination, frequency, now + 0.72 + index * 0.12, 0.9, 0.045, "square"));
+    return;
+  }
+  if (cue === "draft-start") {
+    noiseBoom(context, destination, now, 0.18);
+    [130.81, 164.81, 196, 261.63, 329.63, 392, 523.25].forEach((frequency, index) => tone(context, destination, frequency, now + 0.18 + index * 0.22, 1.05, 0.052, "sawtooth"));
+    tone(context, destination, 1046.5, now + 1.72, 1.2, 0.06, "triangle");
+    return;
+  }
+  if (cue === "draft-end") {
+    noiseBoom(context, destination, now, 0.2);
+    [261.63, 329.63, 392, 523.25, 659.25, 783.99].forEach((frequency, index) => tone(context, destination, frequency, now + 0.18 + index * 0.25, 1.2, 0.055, index % 2 ? "triangle" : "sawtooth"));
+    [523.25, 659.25, 783.99, 1046.5].forEach((frequency) => tone(context, destination, frequency, now + 1.85, 1.55, 0.04, "triangle"));
+    return;
+  }
+  if (cue === "announcement") {
+    [659.25, 880, 1174.66].forEach((frequency, index) => tone(context, destination, frequency, now + index * 0.18, 0.58, 0.07, "sine"));
+    return;
+  }
+  tone(context, destination, 205, now, 0.34, 0.07, "square", 145);
+  tone(context, destination, 293.66, now + 0.23, 0.62, 0.065, "square", 220);
+}
+
+export default function DraftAudio({ picks = [], draftStatus, announcement }) {
+  const [enabled, setEnabled] = useState(false);
   const [open, setOpen] = useState(false);
-  const [mix, setMix] = useState(() => { try { return { music: 36, sfx: 82, ...JSON.parse(window.localStorage.getItem(MIX_KEY) || "{}") }; } catch { return { music: 36, sfx: 82 }; } });
+  const [mix, setMix] = useState(() => {
+    try { return { sfx:82, ...JSON.parse(window.localStorage.getItem(MIX_KEY) || "{}") }; }
+    catch { return { sfx:82 }; }
+  });
   const [playlist, setPlaylist] = useState([]);
   const [url, setUrl] = useState("");
   const [playlistMessage, setPlaylistMessage] = useState("");
+  const [playerState, setPlayerState] = useState({ ready:false, playing:false, message:"Loading queue…", queueLength:0 });
+  const [lastCue, setLastCue] = useState("");
   const contextRef = useRef(null);
-  const musicRef = useRef(null);
-  const musicGain = useRef(null);
-  const sfxGain = useRef(null);
+  const sfxGainRef = useRef(null);
+  const spotifyRef = useRef(null);
+  const enabledRef = useRef(false);
+  const playerReadyRef = useRef(false);
+  const playerPlayingRef = useRef(false);
+  const pausedForCueRef = useRef(false);
+  const resumeTimerRef = useRef(null);
+  const revealTimerRef = useRef(null);
   const previousCount = useRef(picks.length);
   const previousStatus = useRef(draftStatus);
-  const previousCue = useRef(cue);
+  const previousAnnouncement = useRef(announcement?.nonce);
 
-  const ensureAudio = () => {
+  const ensureAudio = useCallback(() => {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return null;
     if (!contextRef.current) {
       contextRef.current = new AudioContext();
-      musicGain.current = contextRef.current.createGain();
-      sfxGain.current = contextRef.current.createGain();
-      musicGain.current.connect(contextRef.current.destination);
-      sfxGain.current.connect(contextRef.current.destination);
+      sfxGainRef.current = contextRef.current.createGain();
+      sfxGainRef.current.connect(contextRef.current.destination);
     }
-    musicGain.current.gain.value = (mix.music / 100) * 0.05;
-    sfxGain.current.gain.value = mix.sfx / 100;
+    sfxGainRef.current.gain.value = mix.sfx / 100;
     if (contextRef.current.state === "suspended") void contextRef.current.resume();
     return contextRef.current;
-  };
+  }, [mix.sfx]);
 
-  const stopMusic = () => {
-    if (!musicRef.current) return;
-    window.clearInterval(musicRef.current.interval);
-    musicRef.current.nodes.forEach((node) => { try { node.stop(); } catch { /* already stopped */ } });
-    musicRef.current = null;
-  };
+  const runCue = useCallback((cue, { resumeAfter = true } = {}) => {
+    if (!enabledRef.current || !cue) return;
+    const context = ensureAudio();
+    if (!context) return;
+    window.clearTimeout(resumeTimerRef.current);
+    if (playerReadyRef.current && playerPlayingRef.current && !pausedForCueRef.current) {
+      spotifyRef.current?.pause();
+      pausedForCueRef.current = true;
+    }
+    playCue(context, sfxGainRef.current, cue);
+    setLastCue(CUE_LABEL[cue] || cue);
+    if (resumeAfter) {
+      resumeTimerRef.current = window.setTimeout(() => {
+        if (enabledRef.current && pausedForCueRef.current) spotifyRef.current?.resume();
+        pausedForCueRef.current = false;
+      }, CUE_LENGTH[cue] || 1400);
+    }
+  }, [ensureAudio]);
 
-  const startMusic = (context) => {
-    stopMusic();
-    const nodes = [55, 82.41].map((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const gain = context.createGain();
-      oscillator.type = index ? "triangle" : "sine";
-      oscillator.frequency.value = frequency;
-      gain.gain.value = index ? 0.28 : 0.42;
-      oscillator.connect(gain).connect(musicGain.current);
-      oscillator.start();
-      return oscillator;
-    });
-    const pulse = () => { const now = context.currentTime; [164.81, 196, 246.94].forEach((frequency, index) => tone(context, musicGain.current, frequency, now + index * 0.22, 0.5, 0.18, "triangle")); };
-    pulse();
-    musicRef.current = { nodes, interval: window.setInterval(pulse, 4200) };
-  };
+  const handlePlayerState = useCallback((next) => {
+    playerReadyRef.current = next.ready;
+    playerPlayingRef.current = next.playing;
+    setPlayerState(next);
+  }, []);
 
-  const fanfare = (context) => [196, 246.94, 293.66, 392].forEach((frequency, index) => tone(context, sfxGain.current, frequency, context.currentTime + index * 0.13, 0.58, 0.055, "sawtooth"));
-  const pickChime = (context) => { [523.25, 659.25, 783.99].forEach((frequency, index) => tone(context, sfxGain.current, frequency, context.currentTime + index * 0.085, 0.44, 0.07, "triangle")); tone(context, sfxGain.current, 1046.5, context.currentTime + 0.31, 0.72, 0.065, "sine"); };
-  const alert = (context) => { tone(context, sfxGain.current, 220, context.currentTime, 0.28, 0.05, "square"); tone(context, sfxGain.current, 293.66, context.currentTime + 0.18, 0.5, 0.05, "square"); };
+  const reloadPlaylist = useCallback(async () => {
+    const { data } = await supabase.from("playlist_items").select("*").eq("league_id", LEAGUE_ID).eq("active", true).order("created_at");
+    setPlaylist(data || []);
+  }, []);
+
+  useEffect(() => {
+    void reloadPlaylist();
+    const channel = supabase.channel(`draft-audio-${LEAGUE_ID}`)
+      .on("postgres_changes", { event:"*", schema:"public", table:"playlist_items", filter:`league_id=eq.${LEAGUE_ID}` }, reloadPlaylist)
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [reloadPlaylist]);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(MIX_KEY, JSON.stringify(mix)); } catch { /* storage may be unavailable */ }
+    if (sfxGainRef.current) sfxGainRef.current.gain.value = mix.sfx / 100;
+  }, [mix]);
+
+  useEffect(() => {
+    if (enabled && picks.length > previousCount.current) {
+      runCue("pick-in", { resumeAfter:false });
+      window.clearTimeout(revealTimerRef.current);
+      revealTimerRef.current = window.setTimeout(() => runCue("pick-reveal"), 1150);
+    }
+    previousCount.current = picks.length;
+  }, [enabled, picks.length, runCue]);
+
+  useEffect(() => {
+    if (enabled && draftStatus === "in_progress" && previousStatus.current !== "in_progress") runCue("draft-start");
+    if (enabled && isDraftComplete(draftStatus) && !isDraftComplete(previousStatus.current)) runCue("draft-end");
+    previousStatus.current = draftStatus;
+  }, [draftStatus, enabled, runCue]);
+
+  useEffect(() => {
+    if (enabled && announcement?.nonce && announcement.nonce !== previousAnnouncement.current) runCue(announcementCue(announcement));
+    previousAnnouncement.current = announcement?.nonce;
+  }, [announcement, enabled, runCue]);
+
+  useEffect(() => () => {
+    enabledRef.current = false;
+    window.clearTimeout(resumeTimerRef.current);
+    window.clearTimeout(revealTimerRef.current);
+    void contextRef.current?.close?.();
+  }, []);
 
   const toggle = () => {
-    const next = !enabled;
+    const next = !enabledRef.current;
+    enabledRef.current = next;
     setEnabled(next);
-    window.localStorage.setItem(AUDIO_KEY, String(next));
-    if (next) { const context = ensureAudio(); if (context) { fanfare(context); startMusic(context); } } else stopMusic();
+    if (!next) {
+      pausedForCueRef.current = false;
+      spotifyRef.current?.pause();
+      return;
+    }
+    ensureAudio();
+    setOpen(true);
+    spotifyRef.current?.play();
+    window.setTimeout(() => runCue("announcement"), 80);
   };
-
-  useEffect(() => { try { window.localStorage.setItem(MIX_KEY, JSON.stringify(mix)); } catch { /* no-op */ } if (contextRef.current) ensureAudio(); }, [mix]);
-  useEffect(() => { supabase.from("playlist_items").select("*").eq("league_id", LEAGUE_ID).eq("active", true).order("created_at").then(({ data }) => setPlaylist(data || [])); }, []);
-  useEffect(() => { if (enabled) { const context = ensureAudio(); if (context && !musicRef.current) startMusic(context); } }, [enabled]);
-  useEffect(() => { if (enabled && picks.length > previousCount.current) pickChime(ensureAudio()); previousCount.current = picks.length; }, [enabled, picks.length]);
-  useEffect(() => { if (enabled && draftStatus === "in_progress" && previousStatus.current !== "in_progress") fanfare(ensureAudio()); previousStatus.current = draftStatus; }, [draftStatus, enabled]);
-  useEffect(() => { if (enabled && cue && cue !== previousCue.current) alert(ensureAudio()); previousCue.current = cue; }, [cue, enabled]);
-  useEffect(() => () => { stopMusic(); void contextRef.current?.close?.(); }, []);
 
   const addTrack = async () => {
     setPlaylistMessage("");
-    if (!/^https:\/\/(music\.apple\.com|open\.spotify\.com)\//i.test(url)) { setPlaylistMessage("Paste an Apple Music or Spotify link."); return; }
-    const result = await supabase.from("playlist_items").insert({ league_id: LEAGUE_ID, url, requested_by: "Draft guest" }).select().single();
+    const normalized = normalizeSpotifyTrackUrl(url);
+    if (!normalized) { setPlaylistMessage("Paste a Spotify track link (not an album or playlist)."); return; }
+    if (playlist.some((item) => normalizeSpotifyTrackUrl(item.url) === normalized)) { setPlaylistMessage("That track is already in the queue."); return; }
+    const result = await supabase.from("playlist_items").insert({ league_id:LEAGUE_ID, url:normalized, requested_by:"Draft guest" }).select().single();
     if (result.error) { setPlaylistMessage("Could not add that track yet."); return; }
     setPlaylist((current) => [...current, result.data]);
     setUrl("");
-    setPlaylistMessage("Added to the room playlist.");
+    setPlaylistMessage("Added. It will play automatically in queue order.");
   };
 
   return (
     <div className="audio-manager">
-      <button className={`sound-toggle audio-director ${enabled ? "enabled" : ""}`} onClick={toggle} title={enabled ? "Mute draft music and event cues" : "Start draft music and event cues"}>{enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}<span><b>{enabled ? "MUSIC + SFX" : "SOUND OFF"}</b><small>{enabled ? "LIVE MIX" : "CLICK TO START"}</small></span><Music2 size={13} className={enabled ? "audio-pulse" : ""} /></button>
+      <button className={`sound-toggle audio-director ${enabled ? "enabled" : ""}`} onClick={toggle} title={enabled ? "Mute draft music and event cues" : "Start draft music and event cues"}>
+        {enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+        <span><b>{enabled ? playerState.playing ? "MUSIC PLAYING" : "SOUND ON" : "SOUND OFF"}</b><small>{enabled ? playerState.message : "CLICK TO START"}</small></span>
+        <ListMusic size={13} className={playerState.playing ? "audio-pulse" : ""} />
+      </button>
       <button className="audio-settings" onClick={() => setOpen((value) => !value)} aria-label="Open audio manager"><SlidersHorizontal /></button>
-      {open && <div className="audio-popover"><header><div><span>SHOW AUDIO</span><b>Music & sound effects</b></div><button onClick={() => setOpen(false)}><X /></button></header><label>Background music <strong>{mix.music}%</strong><input type="range" min="0" max="100" value={mix.music} onChange={(event) => setMix({ ...mix, music: Number(event.target.value) })} /></label><label>Event sound effects <strong>{mix.sfx}%</strong><input type="range" min="0" max="100" value={mix.sfx} onChange={(event) => setMix({ ...mix, sfx: Number(event.target.value) })} /></label><div className="playlist-manager"><span>ROOM PLAYLIST</span><p>Guests can add Apple Music or Spotify links. The commissioner chooses what plays.</p><div><input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="Paste a song or playlist link" /><button onClick={addTrack}><Plus /></button></div>{playlistMessage && <small>{playlistMessage}</small>}<ol>{playlist.slice(-5).map((item) => <li key={item.id}><Music2 /><span>{item.url.includes("apple") ? "Apple Music request" : "Spotify request"}</span><a href={item.url} target="_blank" rel="noreferrer"><ExternalLink /></a></li>)}</ol></div></div>}
+      <div className={`audio-popover ${open ? "open" : "closed"}`} aria-hidden={!open}>
+        <header><div><span>LIVE SHOW AUDIO</span><b>Spotify auto queue</b></div><button onClick={() => setOpen(false)} aria-label="Close audio manager"><X /></button></header>
+        <div className="audio-rule"><span>EVENT CUES</span><b>Pick in · Reveal · Start · End · Announcement</b><small>{lastCue ? `Last cue: ${lastCue}` : "Music pauses for each cue, then resumes automatically."}</small></div>
+        <label>Event sound effects <strong>{mix.sfx}%</strong><input type="range" min="0" max="100" value={mix.sfx} onChange={(event) => setMix({ ...mix, sfx:Number(event.target.value) })} /></label>
+        <SpotifyQueuePlayer ref={spotifyRef} items={playlist} enabled={enabled} onState={handlePlayerState} />
+        <div className="playlist-manager">
+          <span>ADD TO AUTO QUEUE</span>
+          <p>Paste a Spotify track link. Requests join the live queue and advance automatically.</p>
+          <div><input value={url} onChange={(event) => setUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void addTrack(); }} placeholder="https://open.spotify.com/track/…" /><button onClick={addTrack} aria-label="Add Spotify track"><Plus /></button></div>
+          {playlistMessage && <small>{playlistMessage}</small>}
+        </div>
+      </div>
     </div>
   );
 }

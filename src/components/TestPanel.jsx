@@ -25,7 +25,7 @@ export default function TestPanel({ control, bootstrap, live }) {
   const profile = control.profiles.find((item) => Number(item.roster_id) === Number(teamId));
   const setScene = (scene) => control.updateState({ scene });
   const startAuto = async () => {
-    if (!control.state.mock_mode) await control.updateState({ mock_mode: true, mock_picks: [] });
+    if (!control.state.mock_mode) await control.updateState({ mock_mode:true, mock_picks:[], mock_draft_status:"in_progress" });
     setAutoRun(true);
   };
   const fireEvent = (event) => control.updateState({ announcement: { ...event, nonce: Date.now(), rosterId: teamId } });
@@ -49,10 +49,11 @@ export default function TestPanel({ control, bootstrap, live }) {
           <h2>3 · Mock draft</h2>
           <div className="test-mock-status"><i className={control.state.mock_mode ? "on" : ""} /><b>{control.state.mock_mode ? "MOCK ACTIVE" : "OFFICIAL MODE"}</b><strong data-testid="test-pick-count">{control.state.mock_picks?.length || 0} picks</strong></div>
           <div className="test-button-grid">
-            <button data-testid="test-start-mock" onClick={() => control.updateState({ mock_mode:true, mock_picks:[] })}><Play />Start</button>
+            <button data-testid="test-start-mock" onClick={() => control.updateState({ mock_mode:true, mock_picks:[], mock_draft_status:"in_progress" })}><Play />Start</button>
             <button data-testid="test-next-pick" disabled={!control.state.mock_mode} onClick={addPick}><FastForward />Next</button>
             <button data-testid="test-auto-run" className={autoRun ? "active" : ""} onClick={autoRun ? () => setAutoRun(false) : startAuto}>{autoRun ? <Pause /> : <Play />}{autoRun ? "Stop" : "Auto"}</button>
-            <button onClick={() => { setAutoRun(false); control.updateState({ mock_mode:false, mock_picks:[] }); }}>Official</button>
+            <button data-testid="test-end-mock" disabled={!control.state.mock_mode} onClick={() => { setAutoRun(false); control.updateState({ mock_draft_status:"complete" }); }}><Trophy />End</button>
+            <button onClick={() => { setAutoRun(false); control.updateState({ mock_mode:false, mock_picks:[], mock_draft_status:null }); }}>Official</button>
           </div>
         </section>
         <section>

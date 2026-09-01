@@ -42,7 +42,9 @@ function Loading({ error }) {
 function TestLab({ data, team, teamStudio = false }) {
   const control = useTestControl(data.bootstrap);
   if (teamStudio) return <OwnerPortal data={data} control={control} rosterId={team} testMode />;
-  return <div className="test-lab-shell"><Broadcast data={data} control={control} testMode /><TestPanel control={control} bootstrap={data.bootstrap} live={data.live} /></div>;
+  const picks = control.state.mock_picks || [];
+  const draftStatus = control.state.mock_draft_status || (control.state.mock_mode ? "in_progress" : data.live?.draft?.status || data.bootstrap.draft.status);
+  return <div className="test-lab-shell"><div className="test-audio-dock"><DraftAudio picks={picks} draftStatus={draftStatus} announcement={control.state.announcement} /></div><Broadcast data={data} control={control} testMode /><TestPanel control={control} bootstrap={data.bootstrap} live={data.live} /></div>;
 }
 
 function Shell({ children, data, control, active, team }) {
@@ -62,7 +64,7 @@ function Shell({ children, data, control, active, team }) {
       <header className="app-header">
         <a className="brand" href="/"><i>SDN</i><div><b>STROUDY DRAFT NIGHT</b><span>LIVE WAR ROOM</span></div></a>
         <nav>{nav.map(([href, label]) => <a className={active === href.split("?")[0] ? "active" : ""} href={href} key={href}>{label}</a>)}</nav>
-        <div className="header-status"><span className={data.status === "live" ? "live" : "offline"}><i />{data.status === "live" ? "SLEEPER LIVE" : "RECONNECTING"}</span><DraftAudio picks={picks} draftStatus={draft.status} cue={control.state.announcement?.nonce || control.state.announcement?.title} /><span className="header-clock">{clock.toLocaleTimeString([], { hour:"numeric", minute:"2-digit" })}</span><button className="fullscreen-button" onClick={fullscreen} title="Toggle fullscreen"><Expand size={17} /></button><a href="/control" title="Commissioner controls"><Settings size={17} /></a></div>
+        <div className="header-status"><span className={data.status === "live" ? "live" : "offline"}><i />{data.status === "live" ? "SLEEPER LIVE" : "RECONNECTING"}</span><DraftAudio picks={picks} draftStatus={draft.status} announcement={control.state.announcement} /><span className="header-clock">{clock.toLocaleTimeString([], { hour:"numeric", minute:"2-digit" })}</span><button className="fullscreen-button" onClick={fullscreen} title="Toggle fullscreen"><Expand size={17} /></button><a href="/control" title="Commissioner controls"><Settings size={17} /></a></div>
       </header>
       <div className="app-content">{children}</div>
       {control.state.bottom_ticker_enabled !== false ? <Ticker lane="bottom" items={tickerItems} speed={Math.max(18, control.state.ticker_speed - 4)} label={picks.length ? "DRAFT FEED" : "HEADLINES"} /> : <div className="ticker-spacer" />}
