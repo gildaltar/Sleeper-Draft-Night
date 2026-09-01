@@ -2,7 +2,7 @@ import { MicOff, VideoOff } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { avatarUrl } from "../lib/draft";
 
-export default function CameraCard({ member, profile, participant, attach, active, compact = false, simulated = false }) {
+export default function CameraCard({ member, profile, participant, attach, active, compact = false, simulated = false, spotlight = false }) {
   const mount = useRef(null);
   useEffect(() => {
     if (simulated || !participant?.bVideoOn || !mount.current) return undefined;
@@ -13,10 +13,13 @@ export default function CameraCard({ member, profile, participant, attach, activ
   const secondary = profile?.accent_2 || "#b7ff3c";
   const name = profile?.team_name || member.teamName;
   const avatar = avatarUrl(member.avatar);
+  const [panelStyle = "broadcast", intensity = "72", favorite = "custom", nameplate = "classic", encodedLogo = ""] = (profile?.panel_style || "broadcast").split("|");
+  const customLogo = encodedLogo ? decodeURIComponent(encodedLogo) : "";
+  const logo = customLogo || (favorite !== "custom" ? `https://a.espncdn.com/i/teamlogos/nfl/500/${favorite}.png` : "");
   return (
     <article
-      className={`camera-card style-${profile?.panel_style || "broadcast"} ${active ? "active" : ""} ${compact ? "compact" : ""} ${simulated ? "simulated" : ""}`}
-      style={{ "--team": primary, "--team-2": secondary }}
+      className={`camera-card style-${panelStyle} nameplate-${nameplate} ${active ? "active" : ""} ${compact ? "compact" : ""} ${simulated ? "simulated" : ""} ${spotlight ? "spotlight-card" : ""}`}
+      style={{ "--team": primary, "--team-2": secondary, "--intensity": Number(intensity) / 100, "--frame-pct": `${intensity}%`, "--frame-glow": `${Number(intensity) * .26}px` }}
     >
       <div className="camera-frame" ref={mount}>
         {(simulated || !participant?.bVideoOn) && (
@@ -33,6 +36,7 @@ export default function CameraCard({ member, profile, participant, attach, activ
         </div>}
       </div>
       <footer>
+        {logo && <img className="panel-logo" src={logo} alt="" />}
         <div>
           <h3>{name}</h3>
           <span>{member.displayName} · Draft slot {member.rosterId}</span>

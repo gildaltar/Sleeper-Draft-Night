@@ -1,4 +1,4 @@
-import { Camera, ChevronLeft, ChevronRight, FastForward, FlaskConical, Pause, Play, RefreshCcw } from "lucide-react";
+import { ArrowLeftRight, BellRing, Camera, ChevronLeft, ChevronRight, FastForward, FlaskConical, Pause, Play, RefreshCcw, Trophy, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nextMockPick } from "../lib/draft";
 
@@ -28,6 +28,7 @@ export default function TestPanel({ control, bootstrap, live }) {
     if (!control.state.mock_mode) await control.updateState({ mock_mode: true, mock_picks: [] });
     setAutoRun(true);
   };
+  const fireEvent = (event) => control.updateState({ announcement: { ...event, nonce: Date.now(), rosterId: teamId } });
 
   return (
     <aside className={`test-panel ${open ? "open" : "closed"}`} data-testid="test-panel">
@@ -55,12 +56,24 @@ export default function TestPanel({ control, bootstrap, live }) {
           </div>
         </section>
         <section>
-          <h2>4 · Team container</h2>
-          <label>Team<select value={teamId} onChange={(event) => setTeamId(Number(event.target.value))}>{bootstrap.members.map((member) => <option value={member.rosterId} key={member.rosterId}>Team {member.rosterId} · {member.teamName}</option>)}</select></label>
-          <div className="test-colors"><label>Primary<input type="color" value={profile?.accent || "#1f9bfe"} onChange={(event) => control.updateProfile(teamId,{accent:event.target.value})} /></label><label>Secondary<input type="color" value={profile?.accent_2 || "#b7ff3c"} onChange={(event) => control.updateProfile(teamId,{accent_2:event.target.value})} /></label></div>
-          <div className="test-button-grid">{["broadcast","carbon","grid","clean"].map((style) => <button className={profile?.panel_style === style ? "active" : ""} key={style} onClick={() => control.updateProfile(teamId,{panel_style:style})}>{style}</button>)}</div>
+          <h2>4 · Show overlays</h2>
+          <p>Preview every takeover exactly as viewers will see it.</p>
+          <div className="test-button-grid event-buttons">
+            <button onClick={() => fireEvent({ type:"trade", kicker:"TRADE ALERT", title:"A deal is on the board", detail:"Draft positions have changed hands." })}><ArrowLeftRight />Trade</button>
+            <button onClick={() => fireEvent({ type:"round", kicker:"ROUND COMPLETE", title:`Round ${Math.max(1, Math.ceil((control.state.mock_picks?.length || 1) / bootstrap.members.length))} is in the books`, detail:"Reset, reload, and get ready for the next run." })}><Trophy />Round</button>
+            <button onClick={() => fireEvent({ type:"announcement", kicker:"COMMISSIONER UPDATE", title:"Draft room announcement", detail:"A custom message can take over every screen." })}><BellRing />Message</button>
+            <button onClick={() => control.updateState({ announcement:null })}><X />Clear</button>
+          </div>
         </section>
-        <footer><button onClick={() => { setAutoRun(false); control.reset(); }}><RefreshCcw />Reset Test Lab</button><a href="/control">Open live controls</a></footer>
+        <section>
+          <h2>5 · Team panel studio</h2>
+          <label>Team<select value={teamId} onChange={(event) => setTeamId(Number(event.target.value))}>{bootstrap.members.map((member) => <option value={member.rosterId} key={member.rosterId}>Team {member.rosterId} · {member.teamName}</option>)}</select></label>
+          <label>Team name<input value={profile?.team_name || ""} onChange={(event) => control.updateProfile(teamId,{team_name:event.target.value})} /></label>
+          <label>Team motto<input value={profile?.motto || ""} onChange={(event) => control.updateProfile(teamId,{motto:event.target.value})} /></label>
+          <div className="test-colors"><label>Primary<input type="color" value={profile?.accent || "#1f9bfe"} onChange={(event) => control.updateProfile(teamId,{accent:event.target.value})} /></label><label>Secondary<input type="color" value={profile?.accent_2 || "#b7ff3c"} onChange={(event) => control.updateProfile(teamId,{accent_2:event.target.value})} /></label></div>
+          <div className="test-button-grid">{["broadcast","neon","championship","rivalry","carbon","clean"].map((style) => <button className={profile?.panel_style?.split("|")[0] === style ? "active" : ""} key={style} onClick={() => control.updateProfile(teamId,{panel_style:style})}>{style}</button>)}</div>
+        </section>
+        <footer><button onClick={() => { setAutoRun(false); control.reset(); }}><RefreshCcw />Reset Test Lab</button><a href={`/test/team?team=${teamId}`}>Open Team Studio</a></footer>
       </>}
     </aside>
   );

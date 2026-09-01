@@ -1,8 +1,9 @@
-import { FlaskConical, Radio, Settings, ShieldCheck, Users, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { FlaskConical, Radio, Settings, ShieldCheck, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import Board from "./components/Board";
 import Broadcast from "./components/Broadcast";
 import ControlRoom from "./components/ControlRoom";
+import DraftAudio from "./components/DraftAudio";
 import OwnerPortal from "./components/OwnerPortal";
 import Teams from "./components/Teams";
 import TestPanel from "./components/TestPanel";
@@ -24,39 +25,6 @@ function useRoute() {
   }, [location]);
 }
 
-function EventAudio({ pickCount }) {
-  const [enabled, setEnabled] = useState(false);
-  const previous = useRef(pickCount);
-  useEffect(() => {
-    if (!enabled || pickCount <= previous.current) {
-      previous.current = pickCount;
-      return;
-    }
-    previous.current = pickCount;
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const context = new AudioContext();
-    const gain = context.createGain();
-    const oscillator = context.createOscillator();
-    oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(420, context.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(680, context.currentTime + 0.12);
-    gain.gain.setValueAtTime(0.0001, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.055, context.currentTime + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.22);
-    oscillator.connect(gain).connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 0.23);
-    oscillator.addEventListener("ended", () => context.close());
-  }, [enabled, pickCount]);
-  return (
-    <button className="sound-toggle" onClick={() => setEnabled((value) => !value)} title="Event sounds only">
-      {enabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
-      <span>{enabled ? "CUES ON" : "CUES OFF"}</span>
-    </button>
-  );
-}
-
 function Loading({ error }) {
   return (
     <main className="loading-screen">
@@ -70,6 +38,7 @@ function Loading({ error }) {
 
 function Shell({ children, data, control, active }) {
   const picks = control.state.mock_mode ? control.state.mock_picks || [] : data.live?.picks || [];
+  const draft = data.live?.draft || data.bootstrap.draft;
   const nav = [["/", "Broadcast"], ["/board", "Draft board"], ["/teams", "Teams"], ["/test", "Test Lab"]];
   return (
     <div className="app-shell">
@@ -77,7 +46,7 @@ function Shell({ children, data, control, active }) {
       <header className="app-header">
         <a className="brand" href="/"><i>SDN</i><div><b>STROUDY DRAFT NIGHT</b><span>LIVE WAR ROOM</span></div></a>
         <nav>{nav.map(([href, label]) => <a className={active === href ? "active" : ""} href={href} key={href}>{label}</a>)}</nav>
-        <div className="header-status"><span className={data.status === "live" ? "live" : "offline"}><i />{data.status === "live" ? "SLEEPER LIVE" : "RECONNECTING"}</span><EventAudio pickCount={picks.length} /><a href="/test" title="Safe Test Lab"><FlaskConical size={17} /></a><a href="/control" title="Commissioner controls"><Settings size={17} /></a></div>
+        <div className="header-status"><span className={data.status === "live" ? "live" : "offline"}><i />{data.status === "live" ? "SLEEPER LIVE" : "RECONNECTING"}</span><DraftAudio picks={picks} draftStatus={draft.status} cue={control.state.announcement?.nonce || control.state.announcement?.title} /><a href="/test" title="Safe Test Lab"><FlaskConical size={17} /></a><a href="/control" title="Commissioner controls"><Settings size={17} /></a></div>
       </header>
       <div className="app-content">{children}</div>
       {control.state.bottom_ticker_enabled !== false ? <Ticker lane="bottom" items={control.tickers} speed={Math.max(18, control.state.ticker_speed - 4)} /> : <div className="ticker-spacer" />}
@@ -94,6 +63,7 @@ export default function App() {
   if (!data.bootstrap) return <Loading error={data.error} />;
   if (route.path === "/control") return <ControlRoom control={control} bootstrap={data.bootstrap} live={data.live} />;
   if (route.path === "/team") return <OwnerPortal data={data} control={control} rosterId={route.team} />;
+  if (route.path === "/test/team") return <OwnerPortal data={data} control={testControl} rosterId={route.team} testMode />;
   if (route.path === "/test") {
     const testPicks = testControl.state.mock_mode ? testControl.state.mock_picks || [] : data.live?.picks || [];
     const testView = testControl.state.scene === "board"

@@ -13,6 +13,7 @@ export const testInitialState = {
   ticker_speed: 26,
   mock_mode: false,
   mock_picks: [],
+  announcement: null,
 };
 
 const testTickers = [

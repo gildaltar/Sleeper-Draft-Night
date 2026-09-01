@@ -1,4 +1,4 @@
-import { AlertOctagon, FastForward, LogOut, Pause, Play, Save, Shield, Volume2 } from "lucide-react";
+import { AlertOctagon, ArrowLeftRight, BellRing, FastForward, LogOut, Pause, Play, Save, Shield, Trophy, Volume2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { nextMockPick } from "../lib/draft";
 import { LEAGUE_ID } from "../lib/config";
@@ -161,7 +161,17 @@ export default function ControlRoom({ control, bootstrap, live }) {
         </article>
         <article className="control-card">
           <h2><Volume2 /> Event audio</h2>
-          <p>There is no continuous background track. Viewers opt in once, then hear only restrained pick and draft-state cues.</p>
+          <p>Viewers can start the live mix once to hear continuous draft-night background music, the opening fanfare, pick chimes, and alert stingers.</p>
+        </article>
+        <article className="control-card show-control">
+          <h2><BellRing /> Show overlays</h2>
+          <p>Take over every live screen with a broadcast event. Pick reveals still fire automatically from the Sleeper feed.</p>
+          <div className="button-grid">
+            <button onClick={() => run(() => control.updateState({ announcement:{ type:"trade", kicker:"TRADE ALERT", title:"A deal is on the board", detail:"Draft positions have changed hands.", nonce:Date.now() } }), "Trade alert live")}><ArrowLeftRight />Trade alert</button>
+            <button onClick={() => run(() => control.updateState({ announcement:{ type:"round", kicker:"ROUND COMPLETE", title:"Round complete", detail:"Reset, reload, and get ready for the next run.", nonce:Date.now() } }), "Round overlay live")}><Trophy />Round break</button>
+            <button onClick={() => run(() => control.updateState({ announcement:{ type:"announcement", kicker:"COMMISSIONER UPDATE", title:"Draft room announcement", detail:"Stand by for an update from the commissioner.", nonce:Date.now() } }), "Announcement live")}><BellRing />Message</button>
+            <button onClick={() => run(() => control.updateState({ announcement:null }), "Overlay cleared")}><X />Clear overlay</button>
+          </div>
         </article>
         <article className="control-card team-password-card">
           <h2>Team access passwords</h2>
