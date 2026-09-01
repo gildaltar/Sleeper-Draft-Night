@@ -273,8 +273,9 @@ a { color:inherit; text-decoration:none; }
 .studio-tabs button:first-child { border-left:1px solid #26384a; }.studio-tabs button.active { color:white;background:#142135;box-shadow:inset 0 -3px var(--team); }
 .studio-tabs svg { width:17px; }.studio-tabs i { width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 8px var(--lime); }
 .studio-workspace { width:100%;max-width:none;height:100%;min-height:0;padding:12px 16px 16px;grid-template-columns:minmax(420px,1.18fr) minmax(390px,.82fr); }
-.studio-preview-column,.studio-controls { min-height:0; }
-.studio-preview-column { display:flex;flex-direction:column;overflow:auto; }
+.studio-workspace>* { min-width:0; }
+.studio-preview-column,.studio-controls { min-width:0;min-height:0;overflow-x:hidden; }
+.studio-preview-column { display:flex;flex-direction:column;overflow-y:auto; }
 .owner-camera-video { position:absolute;z-index:1;inset:0;overflow:hidden; }
 .studio-frame { flex:none;isolation:isolate;border-width:var(--border-width,2px)!important; }
 .studio-frame:before { z-index:5; }
@@ -293,7 +294,8 @@ a { color:inherit; text-decoration:none; }
 .studio-health.state-preview span:nth-child(2) svg { color:#ffb85d; }.studio-health.state-error svg { color:#ff6a7c; }
 .studio-section-head { display:flex;align-items:end;justify-content:space-between;padding-bottom:11px;border-bottom:1px solid #2b3e50; }
 .studio-section-head span { color:var(--lime);font:900 9px Inter;letter-spacing:.14em; }.studio-section-head b { color:#71899c;font-size:9px; }
-.studio-controls { padding:14px 14px 78px;overflow:auto;position:relative; }
+.studio-controls { padding:14px 14px 78px;overflow-y:auto;position:relative; }
+.studio-controls input,.studio-controls select,.studio-controls textarea,.studio-controls button { max-width:100%; }
 .native-camera-actions { display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:12px; }
 .native-camera-actions button { min-height:44px;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #334a5e;background:#09121b;color:#93a9ba;font-weight:800;cursor:pointer; }
 .native-camera-actions button.primary { grid-column:1/-1;border-color:var(--team);background:color-mix(in srgb,var(--team) 20%,#0a131d);color:white; }
@@ -326,7 +328,7 @@ a { color:inherit; text-decoration:none; }
 
 .control-console { height:100dvh;overflow:auto;padding:16px clamp(12px,3vw,34px) 42px;background:#060a10; }
 .control-console-head { margin:0 0 10px; }.control-console-head>a { display:flex;align-items:center;gap:6px;color:#8da2b2;font-size:10px;font-weight:800; }
-.control-health-strip { display:grid;grid-template-columns:repeat(5,1fr);border:1px solid #2d4154;background:#081019; }
+.control-health-strip { display:grid;grid-template-columns:repeat(6,1fr);border:1px solid #2d4154;background:#081019; }
 .control-health-strip>span { min-width:0;display:grid;grid-template-columns:24px 1fr;align-items:center;column-gap:7px;padding:9px 11px;border-right:1px solid #26394a; }
 .control-health-strip>span:last-child { border-right:0; }.control-health-strip svg { grid-row:1/3;width:17px;color:#7ee6a5; }.control-health-strip i { grid-row:1/3;width:8px;height:8px;border-radius:50%;background:#71808c; }.control-health-strip i.on { background:#50e184;box-shadow:0 0 9px #50e184; }
 .control-health-strip small { color:#61798c;font:900 7px Inter;letter-spacing:.1em; }.control-health-strip b { min-width:0;overflow:hidden;text-overflow:ellipsis;color:white;font:900 13px "Barlow Condensed";white-space:nowrap; }
@@ -358,7 +360,7 @@ a { color:inherit; text-decoration:none; }
   .studio-workspace { grid-template-columns:1fr;overflow:auto;padding:8px 8px 90px; }
   .studio-preview-column { overflow:visible; }.studio-controls { overflow:visible;padding-bottom:78px; }
   .studio-save-dock { bottom:-78px; }
-  .control-health-strip { grid-template-columns:repeat(5,minmax(135px,1fr));overflow:auto; }
+  .control-health-strip { grid-template-columns:repeat(6,minmax(135px,1fr));overflow:auto; }
   .control-tabs { overflow:auto; }.control-tabs button { flex:1;min-width:120px; }
   .control-grid { grid-template-columns:1fr; }.control-card-wide { grid-column:auto; }
   .team-claim-grid { grid-template-columns:repeat(2,1fr); }

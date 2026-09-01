@@ -28,6 +28,7 @@ export default function ControlRoom({control,bootstrap,live}) {
   const [teamId,setTeamId] = useState("1");const [teamPassword,setTeamPassword] = useState("");const [teamName,setTeamName] = useState(bootstrap.members[0]?.teamName || "");
   const [overlay,setOverlay] = useState({type:"announcement",kicker:"COMMISSIONER UPDATE",title:"Draft room announcement",detail:"Stand by for an update from the commissioner.",duration:7,sound:"announcement"});
   const [ticker,setTicker] = useState({lane:"bottom",kind:"news",text:"",accent:"#b8ff38"});
+  const [services,setServices] = useState({video:"CHECKING",music:"CHECKING"});
 
   const loadMemberships = useCallback(async () => {
     const result = await supabase.from("team_owner_memberships").select("league_id,roster_id,user_id,owner_email,claimed_at").eq("league_id",LEAGUE_ID).order("roster_id");
@@ -52,6 +53,22 @@ export default function ControlRoom({control,bootstrap,live}) {
     const {data} = supabase.auth.onAuthStateChange((_event,next) => afterAuthLock(() => {if (mounted) void apply(next);}));
     return () => {mounted = false;window.clearTimeout(timer);data.subscription.unsubscribe();};
   },[verifyCommissioner]);
+
+  useEffect(() => {
+    if (!authorized) return;
+    let active = true;
+    Promise.allSettled([
+      fetch("/api/livekit-token",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({role:"viewer",leagueId:LEAGUE_ID})}).then((response) => response.json().then((data) => ({ok:response.ok,data}))),
+      fetch("/api/apple-music-token").then((response) => response.json().then((data) => ({ok:response.ok,data}))),
+    ]).then(([video,music]) => {
+      if (!active) return;
+      setServices({
+        video:video.status === "fulfilled" && video.value.ok && video.value.data.configured ? "READY" : "SETUP NEEDED",
+        music:music.status === "fulfilled" && music.value.ok && music.value.data.configured ? "READY" : "SETUP NEEDED",
+      });
+    });
+    return () => {active = false;};
+  },[authorized]);
 
   const run = async (action,success) => {
     setError("");setMessage("");
@@ -79,7 +96,8 @@ export default function ControlRoom({control,bootstrap,live}) {
       <section className="control-health-strip">
         <span><i className={status === "IN PROGRESS" ? "on" : ""}/><small>SLEEPER</small><b>{status}</b></span>
         <span><Clock3 /><small>PICK TIMER</small><b>{Math.floor(pickTimer / 60)}:{String(pickTimer % 60).padStart(2,"0")}</b></span>
-        <span><Camera /><small>VIDEO</small><b>LIVEKIT</b></span>
+        <span><Camera /><small>CAMERA RELAY</small><b>LIVEKIT {services.video}</b></span>
+        <span><Volume2 /><small>APPLE MUSIC</small><b>{services.music}</b></span>
         <span><Users /><small>OWNERS CLAIMED</small><b>{memberships.length} / {bootstrap.members.length}</b></span>
         <span><Radio /><small>PUBLIC MODE</small><b>{control.state.mock_mode ? "MOCK WARNING" : "SLEEPER LIVE"}</b></span>
       </section>
