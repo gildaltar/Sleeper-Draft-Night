@@ -1,21 +1,19 @@
 import { ArrowDown, ArrowUp, CheckCircle2, ExternalLink, ListPlus, Search, Send, ShieldCheck, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { LEAGUE_ID } from "../lib/config";
 import { memberForPick, playerImage, roundAndPick } from "../lib/draft";
-import { supabase } from "../lib/supabase";
+import { teamAccess } from "../lib/teamAccess";
 
 const queueKey = (draftId, rosterId) => `sdn-draft-plan-${draftId}-${rosterId}`;
 
 const ACTIVE_REQUESTS = new Set(["pending", "processing", "submitted"]);
 
-export default function DraftDesk({ data, control, rosterId, modal = false, onClose, accessPassword = "" }) {
+export default function DraftDesk({ data, control, rosterId, modal = false, onClose }) {
   const { players, members } = data.bootstrap;
   const draft = data.live?.draft || data.bootstrap.draft;
   const picks = data.live?.picks || [];
   const storageKey = queueKey(draft.draftId, rosterId);
   const [query, setQuery] = useState("");
   const [position, setPosition] = useState("ALL");
-  const [password, setPassword] = useState(accessPassword);
   const [candidate, setCandidate] = useState(null);
   const [request, setRequest] = useState(null);
   const [requestBusy, setRequestBusy] = useState(false);
@@ -38,22 +36,17 @@ export default function DraftDesk({ data, control, rosterId, modal = false, onCl
   const remove = (id) => setQueue((currentQueue) => currentQueue.filter((value) => value !== id));
   const move = (index, delta) => setQueue((currentQueue) => { const next=[...currentQueue]; const target=index+delta; if(target<0||target>=next.length)return next; [next[index],next[target]]=[next[target],next[index]]; return next; });
   const sleeperUrl = `https://sleeper.app/draft/nfl/${draft.draftId}`;
-  const invoke = async (action, extra = {}) => {
-    const result = await supabase.functions.invoke("team-access", { body:{ action,leagueId:LEAGUE_ID,rosterId:Number(rosterId),password,...extra } });
-    if (result.error) throw result.error;
-    if (!result.data?.ok) throw new Error(result.data?.error || "Team access failed");
-    return result.data;
-  };
+  const invoke = (action,extra = {}) => teamAccess(action,rosterId,extra);
   const requestStatus = async () => {
-    if (!password || !request) return;
+    if (!request) return;
     const result = await invoke("pick-status", { draftId:draft.draftId });
     if (result.request) setRequest(result.request);
   };
   useEffect(() => {
-    if (!request || !ACTIVE_REQUESTS.has(request.status) || !password) return undefined;
+    if (!request || !ACTIVE_REQUESTS.has(request.status)) return undefined;
     const timer = window.setInterval(() => void requestStatus().catch(() => undefined), 1800);
     return () => window.clearInterval(timer);
-  }, [password, request?.id, request?.status]);
+  }, [request?.id,request?.status]);
   useEffect(() => {
     if (!request) return;
     const official = picks.find((pick) => Number(pick.pickNo) === Number(request.pick_no));
@@ -61,7 +54,7 @@ export default function DraftDesk({ data, control, rosterId, modal = false, onCl
     setRequest((currentRequest) => ({ ...currentRequest, status:String(official.player?.playerId) === String(request.player_id) ? "confirmed" : "rejected", operator_note:String(official.player?.playerId) === String(request.player_id) ? "Confirmed on Sleeper." : `Sleeper recorded ${official.player?.name || "a different player"}.` }));
   }, [picks, request?.id, request?.pick_no, request?.player_id]);
   const submitRequest = async () => {
-    if (!candidate || !onClock || password.length < 6) return;
+    if (!candidate || !onClock) return;
     setRequestBusy(true); setRequestMessage("");
     try {
       const result = await invoke("submit-pick", { draftId:draft.draftId,pickNo,playerId:candidate.playerId,playerName:candidate.name,position:candidate.position,nflTeam:candidate.team || "FA" });
@@ -91,8 +84,8 @@ export default function DraftDesk({ data, control, rosterId, modal = false, onCl
           {request.status === "confirmed" && <b className="request-confirmed"><CheckCircle2 />Official Sleeper pick confirmed</b>}
         </> : <>
           <div><Send /><span>CONFIRM PICK {pickNo}</span><h2>{candidate.name}</h2><p>{candidate.position} · {candidate.team || "FA"} · {owner?.teamName}</p></div>
-          {!accessPassword && <label>Team password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Required to submit" /></label>}
-          <div className="pick-request-buttons"><button onClick={() => setCandidate(null)}><X />Back</button><button className="confirm" disabled={requestBusy || password.length < 6} onClick={submitRequest}><Send />{requestBusy ? "Sending…" : "Send to commissioner"}</button></div>
+          <div className="pick-owner-verified"><ShieldCheck />Authenticated team owner</div>
+          <div className="pick-request-buttons"><button onClick={() => setCandidate(null)}><X />Back</button><button className="confirm" disabled={requestBusy} onClick={submitRequest}><Send />{requestBusy ? "Sending…" : "Send to commissioner"}</button></div>
         </>}
         {requestMessage && request?.status !== "confirmed" && <em>{requestMessage}</em>}
       </section>}

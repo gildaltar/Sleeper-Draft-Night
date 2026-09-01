@@ -43,7 +43,7 @@ export default function TestPanel({ control, bootstrap, live }) {
         <section>
           <h2>2 · Camera layout</h2>
           <div className="test-button-grid">{[["rails","3 + 3 rails"],["filmstrip","Filmstrip"],["wall","Wall"],["hidden","Hidden"]].map(([value,label]) => <button className={control.state.camera_layout === value ? "active" : ""} key={value} onClick={() => control.updateState({ camera_layout:value, camera_enabled:value !== "hidden" })}>{label}</button>)}</div>
-          <p><Camera size={13} /> Camera tiles are simulated; no permission prompt or Zoom session is used.</p>
+          <p><Camera size={13} /> Camera tiles are simulated; no permission prompt or LiveKit room is used.</p>
         </section>
         <section>
           <h2>3 · Mock draft</h2>

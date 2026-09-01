@@ -1,7 +1,7 @@
 import { AlertTriangle, Radio, Trophy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { draftSlotForMember, memberForPick, playerImage, rosterNeeds, roundAndPick } from "../lib/draft";
-import { useZoomDisplay } from "../hooks/useZoomDisplay";
+import { useLiveKitDisplay } from "../hooks/useLiveKit";
 import CameraCard from "./CameraCard";
 import Countdown from "./Countdown";
 import EventOverlay from "./EventOverlay";
@@ -49,7 +49,7 @@ export default function Broadcast({ data, control, spectator = false, testMode =
   const pickNo = picks.length + 1;
   const currentMember = memberForPick(pickNo, draft, members) || members[0];
   const layout = control.state.camera_layout || "rails";
-  const zoom = useZoomDisplay({ members, spectator, enabled: !testMode && control.state.camera_enabled !== false && layout !== "hidden" });
+  const cameras = useLiveKitDisplay({ enabled:!testMode && control.state.camera_enabled !== false && layout !== "hidden" });
   const profileByRoster = new Map(control.profiles.map((profile) => [Number(profile.roster_id), profile]));
   const previousCount = useRef(picks.length);
   const [pickEvent, setPickEvent] = useState(null);
@@ -70,7 +70,7 @@ export default function Broadcast({ data, control, spectator = false, testMode =
     return () => { window.clearTimeout(reveal); window.clearTimeout(dismiss); };
   }, [members, picks.length]);
 
-  const camera = (member, spotlight = false) => <CameraCard key={member.userId} member={member} draft={draft} profile={profileByRoster.get(member.rosterId)} participant={zoom.participantByRoster.get(member.rosterId)} attach={zoom.attach} active={draftStarted && member.rosterId === currentMember.rosterId} simulated={testMode} spotlight={spotlight} />;
+  const camera = (member, spotlight = false) => <CameraCard key={member.userId} member={member} draft={draft} profile={profileByRoster.get(member.rosterId)} media={cameras.mediaByRoster.get(Number(member.rosterId))} attach={cameras.attach} active={draftStarted && member.rosterId === currentMember.rosterId} simulated={testMode} spotlight={spotlight} />;
   const reactionMembers = members.filter((member) => Number(member.rosterId) !== Number(currentMember.rosterId));
   const camerasVisible = control.state.scene !== "draft" && control.state.camera_enabled !== false && layout !== "hidden";
   const announcement = control.state.announcement && typeof control.state.announcement === "object" ? control.state.announcement : null;
@@ -83,14 +83,14 @@ export default function Broadcast({ data, control, spectator = false, testMode =
   if (control.state.scene === "cameras" || (control.state.scene === "split" && layout === "wall")) return <main className="camera-wall">{members.map((member) => camera(member))}<EventOverlay event={event} profile={eventProfile} /></main>;
 
   const center = <CenterStage league={league} draft={draft} members={members} players={players} picks={picks} currentMember={currentMember} profiles={control.profiles} spotlight={camerasVisible ? camera(currentMember, true) : null} draftStarted={draftStarted} />;
-  if (camerasVisible && layout === "filmstrip") return <main className="broadcast-filmstrip">{center}<aside className="camera-filmstrip">{reactionMembers.map((member) => camera(member))}</aside><EventOverlay event={event} profile={eventProfile} />{!testMode && zoom.message && <div className="camera-notice"><AlertTriangle size={15} />{zoom.message}</div>}</main>;
+  if (camerasVisible && layout === "filmstrip") return <main className="broadcast-filmstrip">{center}<aside className="camera-filmstrip">{reactionMembers.map((member) => camera(member))}</aside><EventOverlay event={event} profile={eventProfile} />{!testMode && cameras.message && <div className="camera-notice"><AlertTriangle size={15} />{cameras.message}</div>}</main>;
   return (
     <main className={`broadcast-grid ${camerasVisible ? "with-cameras spotlight-layout" : "draft-only"}`}>
       {camerasVisible && <aside className="camera-rail left">{reactionMembers.slice(0, 3).map((member) => camera(member))}</aside>}
       {center}
       {camerasVisible && <aside className="camera-rail right">{reactionMembers.slice(3).map((member) => camera(member))}<div className="up-next-mini"><span>UP NEXT</span><b>{memberForPick(pickNo + 1, draft, members)?.teamName}</b></div></aside>}
       <EventOverlay event={event} profile={eventProfile} />
-      {!testMode && zoom.message && <div className="camera-notice"><AlertTriangle size={15} />{zoom.message}</div>}
+      {!testMode && cameras.message && <div className="camera-notice"><AlertTriangle size={15} />{cameras.message}</div>}
     </main>
   );
 }
