@@ -15,7 +15,16 @@ export const AUDIO_CUES = [
   {id:"celebration",label:"Celebration",description:"Special moment"},
 ];
 
-const cleanName = (name = "sound") => name.replace(/[^a-zA-Z0-9._-]+/g,"-").slice(-90);
+const cleanName = (name = "sound") => name.replace(/[^a-zA-Z0-9._-]+/g,"-").slice(-90) || "sound";
+const inferredMime = (name = "") => ({mp3:"audio/mpeg",wav:"audio/wav",m4a:"audio/mp4",aac:"audio/aac",ogg:"audio/ogg",webm:"audio/webm",flac:"audio/flac"})[name.split(".").pop()?.toLowerCase()] || "";
+export const eventAudioMaxSeconds = (cue) => ({opening:120,"pick-in":12,"pick-reveal":20,"draft-start":30,"draft-end":60,announcement:30,alert:20,trade:30,"round-break":45,celebration:60})[cue] || 30;
+export const audioFileMimeType = (file) => file?.type?.startsWith("audio/") ? file.type : inferredMime(file?.name);
+const audioDuration = (file) => new Promise((resolve) => {
+  const player = document.createElement("audio");const url = URL.createObjectURL(file);let settled = false;let timer;
+  const finish = (value) => {if (settled) return;settled = true;window.clearTimeout(timer);URL.revokeObjectURL(url);player.removeAttribute("src");resolve(value);};
+  player.preload = "metadata";player.onloadedmetadata = () => finish(Number(player.duration));player.onerror = () => finish(null);player.src = url;
+  timer = window.setTimeout(() => finish(null),5000);
+});
 
 export function useAudioCues() {
   const [rows,setRows] = useState([]);const [loading,setLoading] = useState(true);const [busyCue,setBusyCue] = useState("");const [error,setError] = useState("");
@@ -31,17 +40,22 @@ export function useAudioCues() {
   },[load]);
   const byCue = useMemo(() => new Map(rows.map((row) => [row.cue,row])),[rows]);
   const upload = useCallback(async (cue,file) => {
-    if (!file?.type?.startsWith("audio/") && !/\.(mp3|wav|m4a|aac|ogg|webm|flac)$/i.test(file?.name || "")) throw new Error("Choose an audio file.");
-    if (file.size > 15 * 1024 * 1024) throw new Error("Audio files must be 15 MB or smaller.");
-    setBusyCue(cue);setError("");const previous = byCue.get(cue);const path = `${LEAGUE_ID}/${cue}/${Date.now()}-${cleanName(file.name)}`;
+    setBusyCue(cue);setError("");let uploadedPath = "";
     try {
-      const stored = await supabase.storage.from("draft-audio").upload(path,file,{contentType:file.type,cacheControl:"3600",upsert:false});if (stored.error) throw stored.error;
-      const {data:{publicUrl}} = supabase.storage.from("draft-audio").getPublicUrl(path);const {data:{user}} = await supabase.auth.getUser();
-      const saved = await supabase.from("audio_cues").upsert({league_id:LEAGUE_ID,cue,file_name:file.name,storage_path:path,public_url:publicUrl,mime_type:file.type,updated_at:new Date().toISOString(),updated_by:user?.id || null},{onConflict:"league_id,cue"});
-      if (saved.error) {await supabase.storage.from("draft-audio").remove([path]);throw saved.error;}
-      if (previous?.storage_path && previous.storage_path !== path) await supabase.storage.from("draft-audio").remove([previous.storage_path]);
+      const mimeType = audioFileMimeType(file);
+      if (!mimeType) throw new Error("Choose an MP3, WAV, M4A, AAC, OGG, WebM, or FLAC audio file.");
+      if (!file.size) throw new Error("That audio file is empty.");
+      if (file.size > 15 * 1024 * 1024) throw new Error("Audio files must be 15 MB or smaller.");
+      const duration = await audioDuration(file);const maximum = eventAudioMaxSeconds(cue);
+      if (Number.isFinite(duration) && duration > maximum) throw new Error(`${AUDIO_CUES.find((item) => item.id === cue)?.label || "This cue"} must be ${maximum} seconds or shorter.`);
+      const previous = byCue.get(cue);uploadedPath = `${LEAGUE_ID}/${cue}/${Date.now()}-${cleanName(file.name)}`;
+      const stored = await supabase.storage.from("draft-audio").upload(uploadedPath,file,{contentType:mimeType,cacheControl:"3600",upsert:false});if (stored.error) throw stored.error;
+      const {data:{publicUrl}} = supabase.storage.from("draft-audio").getPublicUrl(uploadedPath);const {data:{user}} = await supabase.auth.getUser();
+      const saved = await supabase.from("audio_cues").upsert({league_id:LEAGUE_ID,cue,file_name:file.name,storage_path:uploadedPath,public_url:publicUrl,mime_type:mimeType,updated_at:new Date().toISOString(),updated_by:user?.id || null},{onConflict:"league_id,cue"});
+      if (saved.error) throw saved.error;
+      if (previous?.storage_path && previous.storage_path !== uploadedPath) await supabase.storage.from("draft-audio").remove([previous.storage_path]);
       await load();
-    } catch (uploadError) {setError(uploadError.message || "Upload failed");throw uploadError;} finally {setBusyCue("");}
+    } catch (uploadError) {if (uploadedPath) await supabase.storage.from("draft-audio").remove([uploadedPath]);setError(uploadError.message || "Upload failed");throw uploadError;} finally {setBusyCue("");}
   },[byCue,load]);
   const remove = useCallback(async (cue) => {
     setBusyCue(cue);setError("");

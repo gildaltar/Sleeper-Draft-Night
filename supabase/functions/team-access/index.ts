@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-team-access-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -13,6 +13,11 @@ const publicRequest = (row: Record<string, unknown> | null) => row ? {
   player_name:row.player_name,position:row.position,nfl_team:row.nfl_team,requested_at:row.requested_at,
   operator_note:row.operator_note,official_pick_no:row.official_pick_no,
 } : null;
+const sha256 = async (value: string) => Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)))).map((byte) => byte.toString(16).padStart(2,"0")).join("");
+const newTeamToken = () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
+};
 
 async function currentSleeperTurn(leagueId: string, draftId: string) {
   const [draftResponse, picksResponse, rostersResponse] = await Promise.all([
@@ -70,44 +75,58 @@ Deno.serve(async (req: Request) => {
     const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i,"") || "";
     const { data:authData } = bearer ? await db.auth.getUser(bearer) : {data:{user:null}};
     const user = authData.user;
-    if (!user) return json({ok:false,error:"Sign in with the team owner's email first"},401);
+    const {data:commissioner} = user ? await db.from("commissioners").select("user_id").eq("user_id",user.id).maybeSingle() : {data:null};
 
-    const [{data:membership},{data:commissioner}] = await Promise.all([
-      db.from("team_owner_memberships").select("league_id,roster_id,user_id,owner_email,claimed_at").eq("league_id",leagueId).eq("roster_id",rosterId).maybeSingle(),
-      db.from("commissioners").select("user_id").eq("user_id",user.id).maybeSingle(),
-    ]);
-    const ownerAuthorized = Boolean(commissioner || membership?.user_id === user.id);
+    if (action === "password-login") {
+      const valid = await rateLimitedPasswordCheck(db,req,leagueId,rosterId,String(body.password ?? ""));
+      if (!valid) return json({ok:false,error:"Incorrect team password"},401);
+      const token = newTeamToken();const tokenHash = await sha256(token);
+      await db.from("team_password_sessions").delete().eq("league_id",leagueId).eq("roster_id",rosterId).lt("expires_at",new Date().toISOString());
+      const {error} = await db.from("team_password_sessions").insert({token_hash:tokenHash,league_id:leagueId,roster_id:rosterId});
+      if (error) throw error;
+      return json({ok:true,token,expiresIn:30 * 24 * 60 * 60});
+    }
 
-    if (action === "set-claim-code" || action === "revoke-owner") {
+    const suppliedTeamToken = req.headers.get("x-team-access-token") || "";
+    let passwordSession = null;let suppliedTokenHash = "";
+    if (suppliedTeamToken) {
+      suppliedTokenHash = await sha256(suppliedTeamToken);
+      const {data} = await db.from("team_password_sessions").select("token_hash,league_id,roster_id,expires_at").eq("token_hash",suppliedTokenHash).eq("league_id",leagueId).eq("roster_id",rosterId).gt("expires_at",new Date().toISOString()).maybeSingle();
+      passwordSession = data;
+      if (data) await db.from("team_password_sessions").update({last_used_at:new Date().toISOString()}).eq("token_hash",suppliedTokenHash);
+    }
+    const ownerAuthorized = Boolean(commissioner || passwordSession);
+
+    if (action === "set-team-password" || action === "set-claim-code" || action === "revoke-owner" || action === "team-status") {
       if (!commissioner) return json({ok:false,error:"Commissioner access required"},403);
-      if (action === "set-claim-code") {
+      if (action === "team-status") {
+        const [{data:profile},{count}] = await Promise.all([
+          db.from("team_profiles").select("password_hash").eq("league_id",leagueId).eq("roster_id",rosterId).maybeSingle(),
+          db.from("team_password_sessions").select("token_hash",{count:"exact",head:true}).eq("league_id",leagueId).eq("roster_id",rosterId).gt("expires_at",new Date().toISOString()),
+        ]);
+        return json({ok:true,passwordConfigured:Boolean(profile?.password_hash),activeSessions:count || 0});
+      }
+      if (action === "set-team-password" || action === "set-claim-code") {
         const password = String(body.password ?? "");
-        if (password.length < 6 || password.length > 72) return json({ok:false,error:"Claim code must be 6–72 characters"},400);
+        if (password.length < 6 || password.length > 72) return json({ok:false,error:"Team password must be 6–72 characters"},400);
         const {error} = await db.rpc("set_team_password",{p_league_id:leagueId,p_roster_id:rosterId,p_password:password});
         if (error) throw error;
-        return json({ok:true});
+        return json({ok:true,passwordConfigured:true,activeSessions:0});
       }
-      const {error} = await db.from("team_owner_memberships").delete().eq("league_id",leagueId).eq("roster_id",rosterId);
-      if (error) throw error;
+      const [membershipDelete,sessionDelete] = await Promise.all([
+        db.from("team_owner_memberships").delete().eq("league_id",leagueId).eq("roster_id",rosterId),
+        db.from("team_password_sessions").delete().eq("league_id",leagueId).eq("roster_id",rosterId),
+      ]);
+      if (membershipDelete.error) throw membershipDelete.error;if (sessionDelete.error) throw sessionDelete.error;
       return json({ok:true});
     }
 
-    if (action === "claim") {
-      if (membership && membership.user_id !== user.id && !commissioner) return json({ok:false,error:"This team has already been claimed. Ask the commissioner to reset its owner."},409);
-      const valid = await rateLimitedPasswordCheck(db,req,leagueId,rosterId,String(body.password ?? ""));
-      if (!valid) return json({ok:false,error:"Invalid team claim code"},401);
-      const {data:existingClaim} = await db.from("team_owner_memberships").select("roster_id").eq("league_id",leagueId).eq("user_id",user.id).maybeSingle();
-      if (existingClaim && Number(existingClaim.roster_id) !== rosterId && !commissioner) return json({ok:false,error:"This account already owns another team in this league"},409);
-      const {error} = await db.from("team_owner_memberships").upsert({
-        league_id:leagueId,roster_id:rosterId,user_id:user.id,
-        owner_email:String(user.email || "owner@invalid.local").toLowerCase(),updated_at:new Date().toISOString(),
-      },{onConflict:"league_id,roster_id"});
-      if (error) throw error;
-      return json({ok:true,membership:{league_id:leagueId,roster_id:rosterId,owner_email:user.email}});
+    if (!ownerAuthorized) return json({ok:false,error:suppliedTeamToken ? "Team session expired. Enter the team password again." : "Enter the team password"},401);
+    if (action === "password-logout") {
+      if (passwordSession) await db.from("team_password_sessions").delete().eq("token_hash",suppliedTokenHash);
+      return json({ok:true});
     }
-
-    if (!ownerAuthorized) return json({ok:false,error:"This signed-in account does not own this team"},403);
-    if (action === "session" || action === "verify") return json({ok:true,membership,commissioner:Boolean(commissioner)});
+    if (action === "session" || action === "verify") return json({ok:true,access:passwordSession ? "team-password" : "commissioner",expiresAt:passwordSession?.expires_at || null});
 
     if (action === "pick-status") {
       const draftId = String(body.draftId ?? "");

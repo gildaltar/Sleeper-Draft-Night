@@ -1,12 +1,10 @@
-import { Camera, Check, Eye, EyeOff, ImagePlus, ListPlus, Lock, LogOut, Mic, MicOff, Palette, Save, Send, Signal, Sparkles, StopCircle, VideoOff } from "lucide-react";
+import { Camera, Check, Eye, EyeOff, ImagePlus, ListPlus, Lock, LogOut, Mic, MicOff, Palette, Save, Signal, Sparkles, StopCircle, VideoOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { startOwnerCamera } from "../hooks/useLiveKit";
-import { OWNER_AUTH_RETURN_KEY, ownerMagicLinkRedirect, ownerTeamPath } from "../lib/authRedirect";
 import { TEAM_ACCENTS } from "../lib/config";
 import { memberForPick, parsePanelProfile, rosterNeeds } from "../lib/draft";
 import { stadium } from "../lib/showAssets";
-import { supabase } from "../lib/supabase";
-import { teamAccess } from "../lib/teamAccess";
+import { clearTeamSession, hasTeamSession, signOutTeamSession, teamAccess } from "../lib/teamAccess";
 import DraftDesk from "./DraftDesk";
 import HelmetIdentity from "./HelmetIdentity";
 
@@ -31,11 +29,9 @@ export default function OwnerPortal({data,control,rosterId,testMode = false}) {
   const member = data.bootstrap.members.find((item) => Number(item.rosterId) === Number(rosterId));
   const profile = control.profiles.find((item) => Number(item.roster_id) === Number(rosterId));
   const draftKey = `sdn-studio-draft-v5-${rosterId}`;
-  const [session,setSession] = useState(null);
-  const [authReady,setAuthReady] = useState(testMode);
+  const [accessReady,setAccessReady] = useState(testMode);
   const [unlocked,setUnlocked] = useState(testMode);
-  const [email,setEmail] = useState("");
-  const [claimCode,setClaimCode] = useState("");
+  const [teamPassword,setTeamPassword] = useState("");
   const [showPassword,setShowPassword] = useState(false);
   const [busy,setBusy] = useState(false);
   const [message,setMessage] = useState("");
@@ -52,32 +48,16 @@ export default function OwnerPortal({data,control,rosterId,testMode = false}) {
 
   useEffect(() => {
     if (testMode) return undefined;
-    let mounted = true;
-    supabase.auth.getSession().then(({data:result}) => {
-      if (!mounted) return;
-      setSession(result.session);
-      setAuthReady(true);
-    });
-    const {data:listener} = supabase.auth.onAuthStateChange((_event,next) => {
-      window.setTimeout(() => {
-        if (!mounted) return;
-        setSession(next);
-        setAuthReady(true);
-      },0);
-    });
-    return () => { mounted = false; listener.subscription.unsubscribe(); };
-  },[testMode]);
-
-  useEffect(() => {
-    if (testMode || !authReady || !session) return;
     let active = true;
-    setBusy(true);
-    teamAccess("session",rosterId)
-      .then(() => { if (active) {setUnlocked(true);setMessage("");} })
-      .catch((error) => { if (active) {setUnlocked(false);setMessage(error.message || "This account has not claimed this team.");} })
-      .finally(() => { if (active) setBusy(false); });
+    if (!hasTeamSession(rosterId)) {setAccessReady(true);setUnlocked(false);return () => {active = false;};}
+    teamAccess("session",rosterId).then(() => {if (active) setUnlocked(true);}).catch(() => {if (active) setUnlocked(false);}).finally(() => {if (active) setAccessReady(true);});
     return () => { active = false; };
-  },[authReady,rosterId,session?.user?.id,testMode]);
+  },[rosterId,testMode]);
+  useEffect(() => {
+    if (testMode) return undefined;
+    const expire = (event) => {if (Number(event.detail?.rosterId) === Number(rosterId)) {setUnlocked(false);setMessage("Your saved team session expired. Enter the team password again.");}};
+    window.addEventListener("sdn:team-session-expired",expire);return () => window.removeEventListener("sdn:team-session-expired",expire);
+  },[rosterId,testMode]);
 
   useEffect(() => {
     const serverForm = formFrom(profile,member,rosterId);
@@ -106,24 +86,12 @@ export default function OwnerPortal({data,control,rosterId,testMode = false}) {
     setMessage("");
   };
 
-  const sendMagicLink = async () => {
+  const passwordLogin = async () => {
     setBusy(true);setMessage("");
     try {
-      try { window.sessionStorage.setItem(OWNER_AUTH_RETURN_KEY,ownerTeamPath(rosterId)); } catch { /* Storage can be unavailable. */ }
-      const {error} = await supabase.auth.signInWithOtp({email:email.trim(),options:{emailRedirectTo:ownerMagicLinkRedirect(rosterId),shouldCreateUser:true}});
-      if (error) throw error;
-      setMessage("Check your email and open the secure sign-in link on this device.");
-    } catch (error) { setMessage(error.message || "Could not send the sign-in link"); }
-    finally { setBusy(false); }
-  };
-
-  const claim = async () => {
-    setBusy(true);setMessage("");
-    try {
-      await teamAccess("claim",rosterId,{password:claimCode});
-      setUnlocked(true);setClaimCode("");
-      setMessage("Team ownership verified. This device is signed in.");
-    } catch (error) { setMessage(error.message || "Could not claim this team"); }
+      await teamAccess("password-login",rosterId,{password:teamPassword});
+      setUnlocked(true);setTeamPassword("");setMessage("Team password accepted. This device will stay signed in.");
+    } catch (error) { setMessage(error.message || "Could not sign in to this team"); }
     finally { setBusy(false); }
   };
 
@@ -147,7 +115,7 @@ export default function OwnerPortal({data,control,rosterId,testMode = false}) {
     if (testMode) {setCameraState("joined");setMessage("Simulated camera is live in Test Lab.");return;}
     try {
       cameraSession.current = await startOwnerCamera({rosterId,mount:cameraMount.current,onStatus:(state,detail) => {setCameraState(state);setMessage(detail);}});
-    } catch (error) {setCameraState("error");setMessage(error.message || "Could not start camera");}
+    } catch (error) {setCameraState("error");setMessage(error.message || "Could not start camera");if (String(error.message || "").includes("session expired")) {clearTeamSession(rosterId);setUnlocked(false);}}
   };
   const stopCamera = async () => {
     await cameraSession.current?.destroy?.();
@@ -164,6 +132,12 @@ export default function OwnerPortal({data,control,rosterId,testMode = false}) {
     const next = !microphoneEnabled;
     cameraSession.current?.setMicrophone(next);
     setMicrophoneEnabled(next);
+  };
+  const signOutTeam = async () => {
+    try {await cameraSession.current?.destroy?.();} finally {
+      cameraSession.current = null;cameraMount.current?.replaceChildren();
+      try {await signOutTeamSession(rosterId);} finally {setUnlocked(false);setCameraState("idle");setCameraEnabled(true);setMicrophoneEnabled(true);setMessage("");}
+    }
   };
 
   const activePicks = testMode ? control.state.mock_picks || [] : data.live?.picks || [];
@@ -195,25 +169,14 @@ export default function OwnerPortal({data,control,rosterId,testMode = false}) {
   };
 
   if (!member) return <main className="loading-screen"><span>Team not found</span></main>;
-  if (!authReady) return <main className="loading-screen"><span>Checking secure team access…</span></main>;
-
-  if (!testMode && !session) return (
-    <main className="team-gate team-auth-gate" style={{"--team":form.accent}}>
-      <a href="/">← Back to draft</a><Lock /><span>TEAM OWNER SIGN-IN</span><h1>{member.teamName}</h1>
-      <p>Use the actual owner's email. A one-time sign-in link protects the Studio and Draft Desk on future visits.</p>
-      <label>Owner email<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} onKeyDown={(event) => event.key === "Enter" && sendMagicLink()} placeholder="owner@example.com" /></label>
-      <button disabled={busy || !email.includes("@")} onClick={sendMagicLink}><Send />{busy ? "Sending…" : "Email secure sign-in link"}</button>
-      {message && <div className={message.startsWith("Check") ? "form-success" : "form-error"}>{message}</div>}
-    </main>
-  );
+  if (!accessReady) return <main className="loading-screen"><span>Checking secure team access…</span></main>;
 
   if (!unlocked) return (
     <main className="team-gate team-auth-gate" style={{"--team":form.accent}}>
-      <a href="/">← Back to draft</a><Lock /><span>CLAIM TEAM {rosterId}</span><h1>{member.teamName}</h1>
-      <p>Signed in as <b>{session?.user?.email}</b>. Enter the one-time claim code supplied by the commissioner. After this, the code is no longer used for access.</p>
-      <label>Team claim code<div><input type={showPassword ? "text" : "password"} value={claimCode} onChange={(event) => setClaimCode(event.target.value)} onKeyDown={(event) => event.key === "Enter" && claim()} /><button aria-label={showPassword ? "Hide code" : "Show code"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button></div></label>
-      <button disabled={busy || claimCode.length < 6} onClick={claim}><Lock />{busy ? "Verifying…" : "Claim this team"}</button>
-      <button className="gate-signout" onClick={() => supabase.auth.signOut()}><LogOut />Use a different email</button>
+      <a href="/">← Back to draft</a><Lock /><span>TEAM {rosterId} PRIVATE ACCESS</span><h1>{member.teamName}</h1>
+      <p>Enter the preset password supplied by the commissioner. No email is required, and this browser stays signed in for 30 days.</p>
+      <label>Team password<div><input type={showPassword ? "text" : "password"} autoComplete="current-password" value={teamPassword} onChange={(event) => setTeamPassword(event.target.value)} onKeyDown={(event) => event.key === "Enter" && !busy && teamPassword.length >= 6 && passwordLogin()} autoFocus /><button aria-label={showPassword ? "Hide password" : "Show password"} onClick={() => setShowPassword((value) => !value)}>{showPassword ? <EyeOff /> : <Eye />}</button></div></label>
+      <button disabled={busy || teamPassword.length < 6} onClick={passwordLogin}><Lock />{busy ? "Verifying…" : "Open team studio"}</button>
       {message && <div className="form-error">{message}</div>}
     </main>
   );
@@ -225,8 +188,8 @@ export default function OwnerPortal({data,control,rosterId,testMode = false}) {
   return (
     <main className="owner-portal team-studio studio-v2" style={{"--team":form.accent,"--team-2":form.accent2,"--intensity":Number(form.intensity) / 100,"--frame-pct":`${form.intensity}%`,"--frame-glow":`${Number(form.intensity) * .34}px`,"--border-width":`${form.borderWidth}px`}}>
       <header className="studio-app-header">
-        <div><span>TEAM STUDIO · TEAM {rosterId}{testMode ? " · SAFE PREVIEW" : ""}</span><h1>{form.teamName}</h1><p>{member.displayName} · {session?.user?.email || "Test owner"}</p></div>
-        <div className="studio-header-actions"><b className={dirty ? "unsaved" : "saved"}>{dirty ? "UNSAVED" : <><Check /> SAVED</>}</b>{testMode ? <a className="studio-back" href="/test">Back to Test Lab</a> : <button onClick={() => supabase.auth.signOut()}><LogOut />Sign out</button>}</div>
+        <div><span>TEAM STUDIO · TEAM {rosterId}{testMode ? " · SAFE PREVIEW" : ""}</span><h1>{form.teamName}</h1><p>{member.displayName} · {testMode ? "Test owner" : "Password-protected session"}</p></div>
+        <div className="studio-header-actions"><b className={dirty ? "unsaved" : "saved"}>{dirty ? "UNSAVED" : <><Check /> SAVED</>}</b>{testMode ? <a className="studio-back" href="/test">Back to Test Lab</a> : <button onClick={signOutTeam}><LogOut />Sign out</button>}</div>
       </header>
       <nav className="studio-tabs" aria-label="Team Studio sections">
         {[["camera",Camera,"Camera"],["look",Palette,"Look"],["draft",ListPlus,"Draft Desk"]].map(([value,Icon,label]) => <button className={activeTab === value ? "active" : ""} onClick={() => setActiveTab(value)} key={value}><Icon />{label}{value === "draft" && isOnClock ? <i /> : null}</button>)}

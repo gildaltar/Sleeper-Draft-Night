@@ -1,7 +1,6 @@
 import { Expand, Radio, Settings, ShieldCheck, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import Board from "./components/Board";
-import AuthCallback from "./components/AuthCallback";
 import Broadcast from "./components/Broadcast";
 import Countdown from "./components/Countdown";
 import ControlRoom from "./components/ControlRoom";
@@ -89,7 +88,6 @@ export default function App() {
     window.addEventListener("resize", syncViewport);
     return () => { viewport?.removeEventListener("resize", syncViewport); window.removeEventListener("orientationchange", syncViewport); window.removeEventListener("resize", syncViewport); };
   }, []);
-  if (route.path === "/auth/callback") return <AuthCallback rosterId={route.team} />;
   if (!data.bootstrap) return <Loading error={data.error} />;
   if (route.path === "/test" || route.path === "/test/team") return <TestLab data={data} team={route.team} teamStudio={route.path === "/test/team"} />;
   if (route.path === "/control") return <ControlRoom control={control} bootstrap={data.bootstrap} live={data.live} />;

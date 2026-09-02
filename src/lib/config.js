@@ -9,9 +9,6 @@ export const SUPABASE_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
   "sb_publishable_UPTYCbZFE3ZN5P6GdS0ZcQ_LCntNs7k";
 
-export const PUBLIC_SITE_URL =
-  import.meta.env.VITE_PUBLIC_SITE_URL || "https://sleeper-draft-night-dashboard.vercel.app";
-
 export const TEAM_ACCENTS = [
   ["#1f9bfe", "#b7ff3c"],
   ["#ef4444", "#f97316"],

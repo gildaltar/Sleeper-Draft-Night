@@ -16,3 +16,6 @@ export function isDraftComplete(status = "") {
 export function isDraftLive(status = "") {
   return ["drafting", "in_progress"].includes(String(status).toLowerCase());
 }
+export const PICK_REVEAL_MIN_DELAY = 3200;
+export const PICK_REVEAL_FAILSAFE_DELAY = 15000;
+export const PICK_REVEAL_READY_EVENT = "sdn:pick-reveal-ready";

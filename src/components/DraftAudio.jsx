@@ -1,7 +1,7 @@
 import { FileAudio, ListMusic, LoaderCircle, Play, SlidersHorizontal, Trash2, Upload, Volume2, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AUDIO_CUES, useAudioCues } from "../hooks/useAudioCues";
-import { announcementCue, isDraftComplete, isDraftLive } from "../lib/audio";
+import { PICK_REVEAL_MIN_DELAY, PICK_REVEAL_READY_EVENT, announcementCue, isDraftComplete, isDraftLive } from "../lib/audio";
 
 const MIX_KEY = "sdn-audio-mix-v6";
 const DEFAULT_MIX = Object.fromEntries(AUDIO_CUES.map(({id}) => [id,82]));
@@ -35,7 +35,7 @@ export default function DraftAudio({picks = [],draftStatus,announcement,panel = 
   const [enabled,setEnabled] = useState(false);const [open,setOpen] = useState(panel);const [lastCue,setLastCue] = useState("");const [notice,setNotice] = useState("");
   const [mix,setMix] = useState(() => {try {return {...DEFAULT_MIX,...JSON.parse(window.localStorage.getItem(MIX_KEY) || "{}")} ;} catch {return DEFAULT_MIX;}});
   const contextRef = useRef(null);const masterGainRef = useRef(null);const mixRef = useRef(mix);const cueMapRef = useRef(byCue);const enabledRef = useRef(false);
-  const revealTimerRef = useRef(null);const previousCount = useRef(picks.length);const previousStatus = useRef(draftStatus);const previousAnnouncement = useRef(announcement?.nonce);
+  const previousCount = useRef(picks.length);const previousStatus = useRef(draftStatus);const previousAnnouncement = useRef(announcement?.nonce);
   mixRef.current = mix;cueMapRef.current = byCue;
 
   const ensureAudio = useCallback(() => {
@@ -43,24 +43,35 @@ export default function DraftAudio({picks = [],draftStatus,announcement,panel = 
     if (!contextRef.current) {contextRef.current = new AudioContext();masterGainRef.current = contextRef.current.createGain();masterGainRef.current.connect(contextRef.current.destination);}
     if (contextRef.current.state === "suspended") void contextRef.current.resume();return contextRef.current;
   },[]);
-  const runCue = useCallback((cue,force = false) => {
-    if ((!enabledRef.current && !force) || !cue) return;
+  const runCue = useCallback((cue,force = false,onEnded) => {
+    if ((!enabledRef.current && !force) || !cue) return false;
+    let ended = false;const finish = () => {if (ended) return;ended = true;onEnded?.();};
     const volume = Number(mixRef.current[cue] ?? 82) / 100;const asset = cueMapRef.current.get(cue);setLastCue(LABELS[cue] || cue);
     if (asset?.public_url) {
       const player = new Audio(`${asset.public_url}${asset.public_url.includes("?") ? "&" : "?"}v=${encodeURIComponent(asset.updated_at || "1")}`);player.volume = volume;
-      player.play().catch(() => {const context = ensureAudio();if (!context) return;const gain = context.createGain();gain.gain.value = volume;gain.connect(masterGainRef.current);synthCue(context,gain,cue);});return;
+      player.addEventListener("ended",finish,{once:true});
+      player.play().catch(() => {const context = ensureAudio();if (!context) {finish();return;}const gain = context.createGain();gain.gain.value = volume;gain.connect(masterGainRef.current);synthCue(context,gain,cue);window.setTimeout(finish,cue === "pick-in" ? 1200 : 1800);});return true;
     }
-    const context = ensureAudio();if (!context) return;const gain = context.createGain();gain.gain.value = volume;gain.connect(masterGainRef.current);synthCue(context,gain,cue);
+    const context = ensureAudio();if (!context) {finish();return false;}const gain = context.createGain();gain.gain.value = volume;gain.connect(masterGainRef.current);synthCue(context,gain,cue);if (onEnded) window.setTimeout(finish,cue === "pick-in" ? 1200 : 1800);return true;
   },[ensureAudio]);
   const previewCue = (cue) => {enabledRef.current = true;setEnabled(true);ensureAudio();window.setTimeout(() => runCue(cue,true),30);};
   const uploadCue = async (cue,file,input) => {if (!file) return;setNotice("");try {await upload(cue,file);setNotice(`${LABELS[cue]} uploaded and assigned.`);} catch { /* Hook reports the error. */ } finally {if (input) input.value = "";}};
-  const removeCue = async (cue) => {setNotice("");try {await remove(cue);setNotice(`${LABELS[cue]} removed; synthesized fallback restored.`);} catch { /* Hook reports the error. */ }};
+  const removeCue = async (cue) => {if (!window.confirm(`Remove the uploaded ${LABELS[cue]} sound? The synthesized fallback will take over.`)) return;setNotice("");try {await remove(cue);setNotice(`${LABELS[cue]} removed; synthesized fallback restored.`);} catch { /* Hook reports the error. */ }};
 
   useEffect(() => {try {window.localStorage.setItem(MIX_KEY,JSON.stringify(mix));} catch { /* Storage may be unavailable. */ }},[mix]);
-  useEffect(() => {if (enabled && picks.length > previousCount.current) {runCue("pick-in");window.clearTimeout(revealTimerRef.current);revealTimerRef.current = window.setTimeout(() => runCue("pick-reveal"),1150);}previousCount.current = picks.length;},[enabled,picks.length,runCue]);
+  useEffect(() => {
+    if (picks.length <= previousCount.current) {previousCount.current = picks.length;return undefined;}
+    previousCount.current = picks.length;const pickCount = picks.length;const startedAt = Date.now();let completionTimer;let finished = false;
+    const reveal = () => {
+      if (finished) return;finished = true;
+      completionTimer = window.setTimeout(() => {if (enabledRef.current) runCue("pick-reveal");window.dispatchEvent(new CustomEvent(PICK_REVEAL_READY_EVENT,{detail:{pickCount}}));},Math.max(0,PICK_REVEAL_MIN_DELAY - (Date.now() - startedAt)));
+    };
+    if (enabledRef.current) runCue("pick-in",false,reveal);else reveal();
+    return () => window.clearTimeout(completionTimer);
+  },[picks.length,runCue]);
   useEffect(() => {if (enabled && isDraftLive(draftStatus) && !isDraftLive(previousStatus.current)) runCue("draft-start");if (enabled && isDraftComplete(draftStatus) && !isDraftComplete(previousStatus.current)) runCue("draft-end");previousStatus.current = draftStatus;},[draftStatus,enabled,runCue]);
   useEffect(() => {if (enabled && announcement?.nonce && announcement.nonce !== previousAnnouncement.current) runCue(announcementCue(announcement));previousAnnouncement.current = announcement?.nonce;},[announcement,enabled,runCue]);
-  useEffect(() => () => {enabledRef.current = false;window.clearTimeout(revealTimerRef.current);void contextRef.current?.close?.();},[]);
+  useEffect(() => () => {enabledRef.current = false;void contextRef.current?.close?.();},[]);
   const toggle = () => {const next = !enabledRef.current;enabledRef.current = next;setEnabled(next);if (next) {ensureAudio();setOpen(true);window.setTimeout(() => runCue("announcement"),80);}};
   const popoverOpen = panel || open;
 
@@ -69,7 +80,7 @@ export default function DraftAudio({picks = [],draftStatus,announcement,panel = 
     {!panel && <button className="audio-settings" onClick={() => setOpen((value) => !value)} aria-label="Open audio manager"><SlidersHorizontal/></button>}
     <div className={`audio-popover ${popoverOpen ? "open" : "closed"}`} aria-hidden={!popoverOpen}>
       <header><div><span>LIVE SHOW AUDIO</span><b>Uploaded event sounds</b></div>{!panel && <button onClick={() => setOpen(false)} aria-label="Close audio manager"><X/></button>}</header>
-      {panel && <section className="audio-library"><div className="audio-library-intro"><FileAudio/><span><b>Commissioner sound library</b><small>Upload or replace one file for every show event. Files persist across devices.</small></span></div>{(notice || error) && <p className={error ? "form-error" : "form-success"}>{error || notice}</p>}<div className="audio-cue-grid">{AUDIO_CUES.map((cue) => {const asset = byCue.get(cue.id);const busy = busyCue === cue.id;return <article className={asset ? "assigned" : ""} key={cue.id}><div><b>{cue.label}</b><small>{asset?.file_name || cue.description}</small></div><div><button type="button" onClick={() => previewCue(cue.id)} disabled={busy}><Play/>Test</button><label className="audio-upload"><input type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.flac" onChange={(event) => uploadCue(cue.id,event.target.files?.[0],event.target)}/><span>{busy ? <LoaderCircle className="spin"/> : <Upload/>}{asset ? "Replace" : "Upload"}</span></label>{asset && <button type="button" className="audio-remove" onClick={() => removeCue(cue.id)} disabled={busy} aria-label={`Remove ${cue.label}`}><Trash2/></button>}</div></article>;})}</div></section>}
+      {panel && <section className="audio-library"><div className="audio-library-intro"><FileAudio/><span><b>Commissioner sound library</b><small>Upload or replace one file for every show event. Files persist across devices.</small></span></div>{(notice || error) && <p className={error ? "form-error" : "form-success"}>{error || notice}</p>}<div className="audio-cue-grid">{AUDIO_CUES.map((cue) => {const asset = byCue.get(cue.id);const busy = busyCue === cue.id;return <article className={asset ? "assigned" : ""} key={cue.id}><div><b>{cue.label}</b><small>{asset?.file_name || cue.description}</small></div><div><button type="button" onClick={() => previewCue(cue.id)} disabled={busy}><Play/>Test</button><label className="audio-upload"><input type="file" disabled={busy} accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.flac" onChange={(event) => uploadCue(cue.id,event.target.files?.[0],event.target)}/><span>{busy ? <LoaderCircle className="spin"/> : <Upload/>}{asset ? "Replace" : "Upload"}</span></label>{asset && <button type="button" className="audio-remove" onClick={() => removeCue(cue.id)} disabled={busy} aria-label={`Remove ${cue.label}`}><Trash2/></button>}</div></article>;})}</div></section>}
       <div className="audio-rule"><span>EVENT CUES</span><b>{loading ? "Loading assigned sounds…" : `${byCue.size} uploaded · ${AUDIO_CUES.length - byCue.size} synthesized fallbacks`}</b><small>{lastCue ? `Last cue: ${lastCue}` : "Arm show sound once before the draft so automatic cues can play."}</small></div>
       <div className="sound-mix-grid">{AUDIO_CUES.map(({id,label}) => <label key={id}><span>{label}<button type="button" onClick={() => previewCue(id)}>Test</button></span><strong>{mix[id]}%</strong><input type="range" min="0" max="100" value={mix[id]} onChange={(event) => setMix({...mix,[id]:Number(event.target.value)})}/></label>)}</div>
     </div>

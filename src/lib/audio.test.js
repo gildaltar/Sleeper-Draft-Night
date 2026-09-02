@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { announcementCue, isDraftComplete, isDraftLive } from "./audio";
+import { PICK_REVEAL_FAILSAFE_DELAY, PICK_REVEAL_MIN_DELAY, PICK_REVEAL_READY_EVENT, announcementCue, isDraftComplete, isDraftLive } from "./audio";
 
 describe("draft audio helpers", () => {
   it("selects explicit and inferred announcement cues", () => {
@@ -21,5 +21,11 @@ describe("draft audio helpers", () => {
     expect(isDraftLive("drafting")).toBe(true);
     expect(isDraftLive("in_progress")).toBe(true);
     expect(isDraftLive("pre_draft")).toBe(false);
+  });
+
+  it("keeps the reveal behind the pick-is-in sequence", () => {
+    expect(PICK_REVEAL_MIN_DELAY).toBeGreaterThanOrEqual(3000);
+    expect(PICK_REVEAL_FAILSAFE_DELAY).toBeGreaterThan(PICK_REVEAL_MIN_DELAY);
+    expect(PICK_REVEAL_READY_EVENT).toBe("sdn:pick-reveal-ready");
   });
 });

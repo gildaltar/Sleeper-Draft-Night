@@ -1,5 +1,5 @@
 -- Team desks are tied to an authenticated Supabase user after a one-time
--- commissioner-issued claim code is verified by the team-access Edge Function.
+-- commissioner-issued team password is verified by the team-access Edge Function.
 create table if not exists public.team_owner_memberships (
   league_id text not null references public.broadcast_state(league_id) on delete cascade,
   roster_id integer not null check (roster_id between 1 and 32),

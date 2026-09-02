@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { LEAGUE_ID } from "../lib/config";
 import { supabase } from "../lib/supabase";
+import { getTeamSessionToken } from "../lib/teamAccess";
 
 const parseMetadata = (participant) => {
   try { return JSON.parse(participant?.metadata || "{}"); }
@@ -37,9 +38,10 @@ export async function startOwnerCamera({ rosterId, mount, onStatus }) {
   };
 
   const {data:{session:authSession}} = await supabase.auth.getSession();
+  const teamToken = getTeamSessionToken(rosterId);
   const response = await fetch("/api/livekit-token",{
     method:"POST",
-    headers:{"content-type":"application/json",...(authSession?.access_token ? {authorization:`Bearer ${authSession.access_token}`} : {})},
+    headers:{"content-type":"application/json",...(teamToken ? {"x-team-access-token":teamToken} : {}),...(authSession?.access_token ? {authorization:`Bearer ${authSession.access_token}`} : {})},
     body:JSON.stringify({role:"owner",leagueId:LEAGUE_ID,rosterId:Number(rosterId)}),
   });
   const tokenData = await response.json().catch(() => ({}));

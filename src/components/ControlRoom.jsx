@@ -24,22 +24,25 @@ function Login({onReady}) {
 export default function ControlRoom({control,bootstrap,live}) {
   const [session,setSession] = useState(null);const [authorized,setAuthorized] = useState(false);const [ready,setReady] = useState(false);
   const [message,setMessage] = useState("");const [error,setError] = useState("");const [authIssue,setAuthIssue] = useState("");
-  const [activeTab,setActiveTab] = useState("show");const [memberships,setMemberships] = useState([]);
-  const [teamId,setTeamId] = useState("1");const [teamPassword,setTeamPassword] = useState("");const [teamName,setTeamName] = useState(bootstrap.members[0]?.teamName || "");
+  const [activeTab,setActiveTab] = useState("show");const [accessStatuses,setAccessStatuses] = useState([]);
+  const [teamId,setTeamId] = useState("1");const [teamPassword,setTeamPassword] = useState("");const [teamPasswordConfirm,setTeamPasswordConfirm] = useState("");const [teamName,setTeamName] = useState(bootstrap.members[0]?.teamName || "");
   const [overlay,setOverlay] = useState({type:"announcement",kicker:"COMMISSIONER UPDATE",title:"Draft room announcement",detail:"Stand by for an update from the commissioner.",duration:7,sound:"announcement"});
   const [ticker,setTicker] = useState({lane:"bottom",kind:"news",text:"",accent:"#b8ff38"});
   const [services,setServices] = useState({video:"CHECKING"});
 
-  const loadMemberships = useCallback(async () => {
-    const result = await supabase.from("team_owner_memberships").select("league_id,roster_id,user_id,owner_email,claimed_at").eq("league_id",LEAGUE_ID).order("roster_id");
-    if (!result.error) setMemberships(result.data || []);
-  },[]);
+  const loadAccessStatuses = useCallback(async () => {
+    const results = await Promise.all(bootstrap.members.map(async (member) => {
+      try {return {rosterId:member.rosterId,...await teamAccess("team-status",member.rosterId)};}
+      catch {return {rosterId:member.rosterId,passwordConfigured:false,activeSessions:0,error:true};}
+    }));
+    setAccessStatuses(results);
+  },[bootstrap.members]);
   const verifyCommissioner = useCallback(async (active) => {
     if (!active) {setSession(null);setAuthorized(false);setReady(true);return;}
     const isAuthorized = await checkCommissioner(supabase,active);
     setSession(active);setAuthorized(isAuthorized);setReady(true);setAuthIssue("");
-    if (isAuthorized) await loadMemberships();
-  },[loadMemberships]);
+    if (isAuthorized) await loadAccessStatuses();
+  },[loadAccessStatuses]);
 
   useEffect(() => {
     let mounted = true;
@@ -74,13 +77,22 @@ export default function ControlRoom({control,bootstrap,live}) {
     catch (requestError) {setError(requestError.message || "Control update failed");}
   };
   const selectedMember = bootstrap.members.find((member) => Number(member.rosterId) === Number(teamId));
-  const selectedMembership = memberships.find((item) => Number(item.roster_id) === Number(teamId));
+  const selectedAccess = accessStatuses.find((item) => Number(item.rosterId) === Number(teamId));
   const chooseTeam = (value) => {
     setTeamId(value);
+    setTeamPassword("");setTeamPasswordConfirm("");
     const member = bootstrap.members.find((item) => Number(item.rosterId) === Number(value));
     setTeamName(control.profiles.find((item) => Number(item.roster_id) === Number(value))?.team_name || member?.teamName || "");
   };
   const fireOverlay = () => control.updateState({announcement:{...overlay,duration:Number(overlay.duration),expiresAt:Date.now() + Number(overlay.duration) * 1000,nonce:Date.now()}});
+  const saveTeamPassword = () => {
+    if (!window.confirm(`Set a new password for Team ${teamId}? Every currently signed-in device for this team will be signed out.`)) return;
+    return run(async () => {await teamAccess("set-team-password",Number(teamId),{password:teamPassword});setTeamPassword("");setTeamPasswordConfirm("");await loadAccessStatuses();},"Team password saved; old sessions revoked");
+  };
+  const revokeTeamSessions = () => {
+    if (!window.confirm(`Sign out every device currently using Team ${teamId}? They will need the team password again.`)) return;
+    return run(async () => {await teamAccess("revoke-owner",Number(teamId));await loadAccessStatuses();},"Saved team sessions revoked");
+  };
   const status = String(live?.draft?.status || bootstrap.draft.status).replace("_"," ").toUpperCase();
   const pickTimer = Number(live?.draft?.settings?.pickTimer || bootstrap.draft.settings.pickTimer);
 
@@ -96,7 +108,7 @@ export default function ControlRoom({control,bootstrap,live}) {
         <span><Clock3 /><small>PICK TIMER</small><b>{Math.floor(pickTimer / 60)}:{String(pickTimer % 60).padStart(2,"0")}</b></span>
         <span><Camera /><small>CAMERA RELAY</small><b>LIVEKIT {services.video}</b></span>
         <span><Volume2 /><small>EVENT SOUNDS</small><b>UPLOAD LIBRARY READY</b></span>
-        <span><Users /><small>OWNERS CLAIMED</small><b>{memberships.length} / {bootstrap.members.length}</b></span>
+        <span><Users /><small>TEAM PASSWORDS</small><b>{accessStatuses.some((item) => item.error) ? "CHECK" : `${accessStatuses.filter((item) => item.passwordConfigured).length} / ${bootstrap.members.length}`}</b></span>
         <span><Radio /><small>PUBLIC MODE</small><b>{control.state.mock_mode ? "MOCK WARNING" : "SLEEPER LIVE"}</b></span>
       </section>
       <nav className="control-tabs" aria-label="Control Room sections">
@@ -122,8 +134,8 @@ export default function ControlRoom({control,bootstrap,live}) {
         </>}
 
         {activeTab === "teams" && <>
-          <article className="control-card team-claim-overview control-card-wide"><h2><Users />Owner authentication</h2><p>Each owner signs in by email and claims exactly one team with the commissioner-issued code.</p><div className="team-claim-grid">{bootstrap.members.map((member) => {const claim = memberships.find((item) => Number(item.roster_id) === Number(member.rosterId));return <button className={Number(teamId) === Number(member.rosterId) ? "selected" : ""} onClick={() => chooseTeam(String(member.rosterId))} key={member.rosterId}><strong>{member.rosterId}</strong><span><b>{member.teamName}</b><small>{claim ? claim.owner_email : "Not claimed"}</small></span><i className={claim ? "claimed" : ""}/></button>;})}</div></article>
-          <article className="control-card team-password-card control-card-wide"><h2>Selected team</h2><div className="team-access-meta"><span>TEAM NUMBER<b>{selectedMember?.rosterId}</b></span><span>SLEEPER OWNER<b>{selectedMember?.displayName}</b></span><span>AUTH OWNER<b>{selectedMembership?.owner_email || "Not claimed"}</b></span></div><label>Display name<input maxLength="36" value={teamName} onChange={(event) => setTeamName(event.target.value)}/></label><button onClick={() => run(async () => {const result = await supabase.from("team_profiles").update({team_name:teamName,updated_at:new Date().toISOString()}).eq("league_id",LEAGUE_ID).eq("roster_id",Number(teamId));if (result.error) throw result.error;await control.reload();},"Team name updated")}><Save />Save team name</button><label>New one-time claim code<input type="password" minLength="6" maxLength="72" value={teamPassword} onChange={(event) => setTeamPassword(event.target.value)} /></label><button disabled={teamPassword.length < 6} onClick={() => run(async () => {await teamAccess("set-claim-code",Number(teamId),{password:teamPassword});setTeamPassword("");},"Claim code saved")}><Save />Save claim code</button>{selectedMembership && <button className="danger-lite" onClick={() => run(async () => {await teamAccess("revoke-owner",Number(teamId));await loadMemberships();},"Owner access revoked")}><Trash2 />Revoke owner claim</button>}</article>
+          <article className="control-card team-claim-overview control-card-wide"><h2><Users />Team password access</h2><p>Every team has one commissioner-set password. Owners need no email and their browser stays signed in for 30 days.</p><div className="team-claim-grid">{bootstrap.members.map((member) => {const access = accessStatuses.find((item) => Number(item.rosterId) === Number(member.rosterId));const accessLabel = access?.error ? "Status unavailable" : access?.passwordConfigured ? `${access.activeSessions || 0} signed-in device${access.activeSessions === 1 ? "" : "s"}` : "Password not set";return <button className={Number(teamId) === Number(member.rosterId) ? "selected" : ""} onClick={() => chooseTeam(String(member.rosterId))} key={member.rosterId}><strong>{member.rosterId}</strong><span><b>{member.teamName}</b><small>{accessLabel}</small></span><i className={access?.passwordConfigured ? "claimed" : ""}/></button>;})}</div></article>
+          <article className="control-card team-password-card control-card-wide"><h2>Selected team</h2><div className="team-access-meta"><span>TEAM NUMBER<b>{selectedMember?.rosterId}</b></span><span>SLEEPER OWNER<b>{selectedMember?.displayName}</b></span><span>PRIVATE ACCESS<b>{selectedAccess?.error ? "Status unavailable" : selectedAccess?.passwordConfigured ? `${selectedAccess.activeSessions || 0} active` : "Not configured"}</b></span></div><label>Display name<input maxLength="36" value={teamName} onChange={(event) => setTeamName(event.target.value)}/></label><button onClick={() => run(async () => {const result = await supabase.from("team_profiles").update({team_name:teamName,updated_at:new Date().toISOString()}).eq("league_id",LEAGUE_ID).eq("roster_id",Number(teamId));if (result.error) throw result.error;await control.reload();},"Team name updated")}><Save />Save team name</button><label>New team password<input type="password" autoComplete="new-password" minLength="6" maxLength="72" value={teamPassword} onChange={(event) => setTeamPassword(event.target.value)} /></label><label>Confirm team password<input type="password" autoComplete="new-password" minLength="6" maxLength="72" value={teamPasswordConfirm} onChange={(event) => setTeamPasswordConfirm(event.target.value)} /></label>{teamPasswordConfirm && teamPassword !== teamPasswordConfirm && <div className="form-error">Passwords do not match.</div>}<button disabled={teamPassword.length < 6 || teamPassword !== teamPasswordConfirm} onClick={saveTeamPassword}><Save />Set team password</button>{selectedAccess?.activeSessions > 0 && <button className="danger-lite" onClick={revokeTeamSessions}><Trash2 />Sign out all team devices</button>}</article>
         </>}
       </div>
     </main>

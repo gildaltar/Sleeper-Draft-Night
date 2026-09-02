@@ -26,22 +26,26 @@ export default async function handler(req, res) {
   if (role === "owner") {
     const rosterId = Number(body.rosterId);
     if (!Number.isInteger(rosterId) || rosterId < 1 || rosterId > 32) return json(res,400,{error:"Valid roster ID required"});
-    const bearer = req.headers.authorization?.replace(/^Bearer\s+/i,"") || "";
-    if (!bearer) return json(res,401,{error:"Team owner sign-in required"});
     const supabaseUrl = process.env.SUPABASE_URL || "https://iimmjxnjkkzejwgxofsk.supabase.co";
     const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_UPTYCbZFE3ZN5P6GdS0ZcQ_LCntNs7k";
-    const db = createClient(supabaseUrl,publishableKey,{
-      auth:{persistSession:false,autoRefreshToken:false},
-      global:{headers:{Authorization:`Bearer ${bearer}`}},
-    });
-    const {data:userData,error:userError} = await db.auth.getUser(bearer);
-    if (userError || !userData.user) return json(res,401,{error:"Team owner session expired"});
-    const [{data:membership},{data:commissioner}] = await Promise.all([
-      db.from("team_owner_memberships").select("roster_id,user_id").eq("league_id",leagueId).eq("roster_id",rosterId).maybeSingle(),
-      db.from("commissioners").select("user_id").eq("user_id",userData.user.id).maybeSingle(),
-    ]);
-    if (!commissioner && membership?.user_id !== userData.user.id) return json(res,403,{error:"This account does not own that camera"});
-    identity = `team-${rosterId}-${userData.user.id.slice(0,8)}`;
+    const teamToken = String(req.headers["x-team-access-token"] || "");
+    const bearer = req.headers.authorization?.replace(/^Bearer\s+/i,"") || "";
+    let authorized = false;let identitySuffix = crypto.randomUUID().slice(0,8);
+    if (teamToken) {
+      const accessResponse = await fetch(`${supabaseUrl}/functions/v1/team-access`,{method:"POST",headers:{"content-type":"application/json",apikey:publishableKey,"x-team-access-token":teamToken},body:JSON.stringify({action:"session",leagueId,rosterId})});
+      const accessData = await accessResponse.json().catch(() => ({}));
+      authorized = accessResponse.ok && accessData.ok;
+    }
+    if (!authorized && bearer) {
+      const db = createClient(supabaseUrl,publishableKey,{auth:{persistSession:false,autoRefreshToken:false},global:{headers:{Authorization:`Bearer ${bearer}`}}});
+      const {data:userData,error:userError} = await db.auth.getUser(bearer);
+      if (!userError && userData.user) {
+        const {data:commissioner} = await db.from("commissioners").select("user_id").eq("user_id",userData.user.id).maybeSingle();
+        authorized = Boolean(commissioner);identitySuffix = userData.user.id.slice(0,8);
+      }
+    }
+    if (!authorized) return json(res,401,{error:"Team session expired. Enter the team password again."});
+    identity = `team-${rosterId}-${identitySuffix}`;
     metadata = JSON.stringify({role:"owner",rosterId});
     name = `Team ${rosterId}`;
   }

@@ -1,6 +1,7 @@
 import { Clock3, Radio, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { memberForPick, playerImage, roundAndPick } from "../lib/draft";
+import { PICK_REVEAL_FAILSAFE_DELAY, PICK_REVEAL_READY_EVENT } from "../lib/audio";
 import EventOverlay from "./EventOverlay";
 import HelmetIdentity from "./HelmetIdentity";
 
@@ -30,9 +31,15 @@ export default function Spectator({ data, control }) {
     const pick = picks.at(-1);
     const team = members.find((member) => Number(member.rosterId) === Number(pick.rosterId));
     setPickEvent({ type:"pick", phase:"lock", pick, teamName:team?.teamName });
-    const reveal = window.setTimeout(() => setPickEvent((value) => value ? { ...value, phase:"reveal" } : null), 1150);
-    const dismiss = window.setTimeout(() => setPickEvent(null), 6500);
-    return () => { window.clearTimeout(reveal); window.clearTimeout(dismiss); };
+    let dismiss;let revealed = false;
+    const showReveal = (event) => {
+      if (event?.detail?.pickCount && Number(event.detail.pickCount) !== picks.length) return;
+      if (revealed) return;revealed = true;window.clearTimeout(failsafe);
+      setPickEvent((value) => value ? {...value,phase:"reveal"} : null);dismiss = window.setTimeout(() => setPickEvent(null),6500);
+    };
+    window.addEventListener(PICK_REVEAL_READY_EVENT,showReveal);
+    const failsafe = window.setTimeout(showReveal,PICK_REVEAL_FAILSAFE_DELAY);
+    return () => {window.removeEventListener(PICK_REVEAL_READY_EVENT,showReveal);window.clearTimeout(failsafe);window.clearTimeout(dismiss);};
   }, [members, picks.length]);
   const recent = [...picks].slice(-5).reverse();
   const { round, slot } = roundAndPick(pickNo, draft.settings.teams);
